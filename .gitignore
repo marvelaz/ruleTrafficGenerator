@@ -1,0 +1,21 @@
+# Dependencies
+.venv/
+.claude/
+.codegraph/
+
+# Builds
+dist/
+build/
+
+# Logs and temps
+*.log
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+config.json
+
+# IDEs
+.vscode/
+.idea/
