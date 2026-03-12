@@ -11,6 +11,7 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+__pycache__/*
 
 # Secrets
 .env
@@ -23,3 +24,4 @@ config.yaml
 
 # Test Files
 test_*
+lab_output/
