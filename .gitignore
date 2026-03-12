@@ -15,7 +15,11 @@ Thumbs.db
 # Secrets
 .env
 config.json
+config.yaml
 
 # IDEs
 .vscode/
 .idea/
+
+# Test Files
+test_*

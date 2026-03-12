@@ -40,23 +40,23 @@ SERVICES = [
     {"name": "HTTP",     "protocol": "TCP", "dst_port": "80"},
     {"name": "HTTPS",    "protocol": "TCP", "dst_port": "443"},
     {"name": "SSH",      "protocol": "TCP", "dst_port": "22"},
-    {"name": "DNS-UDP",  "protocol": "UDP", "dst_port": "53"},
-    {"name": "DNS-TCP",  "protocol": "TCP", "dst_port": "53"},
+    {"name": "DNS",      "protocol": "UDP", "dst_port": "53"},
     {"name": "SMTP",     "protocol": "TCP", "dst_port": "25"},
     {"name": "MYSQL",    "protocol": "TCP", "dst_port": "3306"},
     {"name": "RDP",      "protocol": "TCP", "dst_port": "3389"},
-    {"name": "HTTP-ALT", "protocol": "TCP", "dst_port": "8080"},
-    {"name": "HTTPS-ALT","protocol": "TCP", "dst_port": "8443"},
     {"name": "FTP",      "protocol": "TCP", "dst_port": "21"},
     {"name": "NTP",      "protocol": "UDP", "dst_port": "123"},
     {"name": "SNMP",     "protocol": "UDP", "dst_port": "161"},
-    {"name": "ICMP",     "protocol": "ICMP","dst_port": None},
+    {"name": "PING",     "protocol": "ICMP","dst_port": None},
     {"name": "LDAP",     "protocol": "TCP", "dst_port": "389"},
-    {"name": "LDAPS",    "protocol": "TCP", "dst_port": "636"},
-    {"name": "MSSQL",    "protocol": "TCP", "dst_port": "1433"},
-    {"name": "ORACLE",   "protocol": "TCP", "dst_port": "1521"},
-    {"name": "REDIS",    "protocol": "TCP", "dst_port": "6379"},
-    {"name": "MONGO",    "protocol": "TCP", "dst_port": "27017"},
+    {"name": "MS-SQL",   "protocol": "TCP", "dst_port": "1433"},
+    {"name": "IMAP",     "protocol": "TCP", "dst_port": "143"},
+    {"name": "POP3",     "protocol": "TCP", "dst_port": "110"},
+    {"name": "TELNET",   "protocol": "TCP", "dst_port": "23"},
+    {"name": "KERBEROS", "protocol": "TCP", "dst_port": "88"},
+    {"name": "NFS",      "protocol": "TCP", "dst_port": "2049"},
+    {"name": "RADIUS",   "protocol": "UDP", "dst_port": "1812"},
+    {"name": "SYSLOG",   "protocol": "UDP", "dst_port": "514"},
 ]
 
 INSIDE_SUBNETS = [
@@ -236,10 +236,12 @@ def build_address_pool(n_rules: int) -> list[dict]:
 
     # /32 hosts (for shadow rules and overlapping with /24 or /28)
     sample_hosts = [
-        "192.168.1.10", "192.168.1.20", "192.168.1.50",
-        "192.168.2.10", "192.168.2.20",
-        "10.10.0.10",   "10.10.0.20",   "10.10.0.50",
-        "10.10.1.10",   "10.20.0.5",
+        "192.168.1.10", "192.168.1.20", "192.168.1.50", "192.168.1.100", "192.168.1.150",
+        "192.168.2.10", "192.168.2.20", "192.168.2.100", "192.168.2.150",
+        "172.16.0.10",  "172.16.0.50",  "172.16.1.10",  "172.16.1.50",
+        "10.10.0.10",   "10.10.0.20",   "10.10.0.50",   "10.10.0.100", "10.10.0.150",
+        "10.10.1.10",   "10.10.1.50",   "10.20.0.5",    "10.20.0.100",
+        "10.30.0.10",   "10.40.0.10",
     ]
     for host in sample_hosts:
         cidr = f"{host}/32"
@@ -263,15 +265,18 @@ def _make_policy(
     service: str,
     action: str = "accept",
     comment: str = "",
+    srcintf: str = "port2",
+    dstintf: str = "port3",
 ) -> dict:
     return {
         "name": name,
-        "srcintf": [{"name": "any"}],
-        "dstintf": [{"name": "any"}],
+        "srcintf": [{"name": srcintf}],
+        "dstintf": [{"name": dstintf}],
         "srcaddr": [{"name": src_addr}],
         "dstaddr": [{"name": dst_addr}],
         "service": [{"name": service}],
         "action": action,
+        "schedule": "always",
         "status": "enable",
         "logtraffic": "all",
         "logtraffic-start": "enable",
@@ -465,21 +470,8 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
                     time.sleep(0.05)
                 progress.advance(task)
 
-        # Push custom service objects
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                      BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                      console=console) as progress:
-            task = progress.add_task("Pushing service objects...", total=len(SERVICES))
-            for svc in SERVICES:
-                svc_name = f"LAB-SVC-{svc['name']}"
-                if svc_name not in existing_svcs:
-                    api.create_service(svc_name, svc)
-                    time.sleep(0.05)
-                progress.advance(task)
-
-        # Update service names in pool to use lab-prefixed names
-        for svc in SERVICES:
-            svc["name"] = f"LAB-SVC-{svc['name']}"
+        # Use built-in FortiGate services directly (no custom service creation needed)
+        console.print("  Using built-in FortiGate services")
 
     # Generate policies
     console.print("\n[cyan]Generating policy objects...")

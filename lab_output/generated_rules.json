@@ -1,0 +1,697 @@
+{
+  "metadata": {
+    "total": 10,
+    "clean": 3,
+    "shadow": 2,
+    "duplicate": 1,
+    "subnet_overlap": 1,
+    "service_overlap": 3,
+    "total_pushed": 19
+  },
+  "policies": [
+    {
+      "name": "LAB-BROAD-0006",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-1-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-20-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=6 type=shadow-broad",
+      "nat": "disable",
+      "_seq": 1
+    },
+    {
+      "name": "LAB-DUP-B-0009",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-172-16-0-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-30-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=9 type=duplicate",
+      "nat": "disable",
+      "_seq": 2
+    },
+    {
+      "name": "LAB-CLEAN-0003",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-SUB-192-168-1-176_28"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-HOST-10-10-0-50"
+        }
+      ],
+      "service": [
+        {
+          "name": "SSH"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=3 type=clean",
+      "nat": "disable",
+      "_seq": 3
+    },
+    {
+      "name": "LAB-SHADOW-0005",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-SUB-172-16-0-80_28"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-SUB-10-10-1-240_28"
+        }
+      ],
+      "service": [
+        {
+          "name": "RADIUS"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=5 type=shadow-specific",
+      "nat": "disable",
+      "_seq": 4
+    },
+    {
+      "name": "LAB-CLEAN-0001",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-172-16-1-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-40-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "FTP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=1 type=clean",
+      "nat": "disable",
+      "_seq": 5
+    },
+    {
+      "name": "LAB-MSVC-0017",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-1-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-40-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "MYSQL"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=17 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 6
+    },
+    {
+      "name": "LAB-MSVC-0015",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "NFS"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=15 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 7
+    },
+    {
+      "name": "LAB-WIDE-0010",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-2-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-1-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=10 type=subnet-overlap-broad",
+      "nat": "disable",
+      "_seq": 8
+    },
+    {
+      "name": "LAB-CLEAN-0002",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-SUB-192-168-10-224_28"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-SUB-10-40-0-80_28"
+        }
+      ],
+      "service": [
+        {
+          "name": "SNMP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=2 type=clean",
+      "nat": "disable",
+      "_seq": 9
+    },
+    {
+      "name": "LAB-MSVC-0014",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "FTP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=14 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 10
+    },
+    {
+      "name": "LAB-BROAD-0004",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-1-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-20-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "RADIUS"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=4 type=shadow-broad",
+      "nat": "disable",
+      "_seq": 11
+    },
+    {
+      "name": "LAB-MSVC-0012",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "HTTPS"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=12 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 12
+    },
+    {
+      "name": "LAB-DUP-A-0008",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-172-16-0-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-30-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=8 type=duplicate",
+      "nat": "disable",
+      "_seq": 13
+    },
+    {
+      "name": "LAB-SPEC-0011",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-SUB-192-168-10-144_28"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-1-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=11 type=subnet-overlap-specific",
+      "nat": "disable",
+      "_seq": 14
+    },
+    {
+      "name": "LAB-MSVC-0019",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-40-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=19 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 15
+    },
+    {
+      "name": "LAB-MSVC-0013",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-10-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "TELNET"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=13 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 16
+    },
+    {
+      "name": "LAB-MSVC-0018",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-10-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-40-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "POP3"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=18 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 17
+    },
+    {
+      "name": "LAB-SHADOW-0007",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-SUB-192-168-10-224_28"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-SUB-10-40-0-128_28"
+        }
+      ],
+      "service": [
+        {
+          "name": "LDAP"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=7 type=shadow-specific",
+      "nat": "disable",
+      "_seq": 18
+    },
+    {
+      "name": "LAB-MSVC-0016",
+      "srcintf": [
+        {
+          "name": "port2"
+        }
+      ],
+      "dstintf": [
+        {
+          "name": "port3"
+        }
+      ],
+      "srcaddr": [
+        {
+          "name": "LAB-NET-192-168-1-0_24"
+        }
+      ],
+      "dstaddr": [
+        {
+          "name": "LAB-NET-10-40-0-0_24"
+        }
+      ],
+      "service": [
+        {
+          "name": "DNS"
+        }
+      ],
+      "action": "accept",
+      "schedule": "always",
+      "status": "enable",
+      "logtraffic": "all",
+      "logtraffic-start": "enable",
+      "comments": "LAB-TEST-2025 seq=16 type=svc-overlap",
+      "nat": "disable",
+      "_seq": 19
+    }
+  ]
+}
