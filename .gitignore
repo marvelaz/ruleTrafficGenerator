@@ -26,3 +26,4 @@ config.yaml
 # Test Files
 test_*
 lab_output/
+*Zone.Identifier
