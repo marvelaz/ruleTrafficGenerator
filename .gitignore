@@ -6,6 +6,7 @@
 # Builds
 dist/
 build/
+lab_output/
 
 # Logs and temps
 *.log
