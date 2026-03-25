@@ -1,0 +1,98 @@
+# =============================================================================
+# config.yaml — FortiGate Rule Optimization Lab
+# =============================================================================
+# Fill in your FortiGate and FortiAnalyzer IPs, API tokens, and interface names
+# before running any phase. All other values have sensible defaults.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# FortiGate
+# -----------------------------------------------------------------------------
+fortigate:
+  host:       "192.168.1.1"       # FortiGate management IP or FQDN
+  port:       443
+  api_token:  "REPLACE_ME"        # REST API token (System > API Tokens)
+  vdom:       "root"              # Target VDOM
+  verify_ssl: false               # Set true in production with valid cert
+  timeout:    30                  # HTTP request timeout in seconds
+
+# -----------------------------------------------------------------------------
+# FortiAnalyzer
+# -----------------------------------------------------------------------------
+fortianalyzer:
+  host:       "192.168.1.2"       # FortiAnalyzer management IP or FQDN
+  port:       443
+  api_token:  "REPLACE_ME"        # FAZ API token (System Settings > Admin > API)
+  adom:       "root"              # ADOM containing the FortiGate device
+  verify_ssl: false
+  timeout:    30
+
+# -----------------------------------------------------------------------------
+# Network — Linux hosts (linux1 = inside, linux2 = outside)
+# -----------------------------------------------------------------------------
+network:
+  inside:
+    primary_ip:       "192.168.1.100"
+    linux_interface:  "eth0"           # Interface to add aliases on (linux1)
+    aliases:                           # Virtual IPs added by --setup-aliases
+      - "192.168.1.101"
+      - "192.168.1.102"
+      - "192.168.1.103"
+      - "192.168.1.104"
+      - "192.168.1.105"
+      - "192.168.1.106"
+      - "192.168.1.107"
+      - "192.168.1.108"
+      - "192.168.1.109"
+      - "192.168.1.110"
+
+  outside:
+    primary_ip:       "10.10.0.100"
+    linux_interface:  "eth0"           # Interface to add aliases on (linux2)
+    aliases:
+      - "10.10.0.101"
+      - "10.10.0.102"
+      - "10.10.0.103"
+      - "10.10.0.104"
+      - "10.10.0.105"
+      - "10.10.0.106"
+      - "10.10.0.107"
+      - "10.10.0.108"
+      - "10.10.0.109"
+      - "10.10.0.110"
+
+# -----------------------------------------------------------------------------
+# Traffic generation (Phase 2)
+# -----------------------------------------------------------------------------
+traffic:
+  match_ratio:          0.68    # Fraction of rules to match (0.60-0.75 per scenario)
+  icmp_count:           3       # ICMP echo requests per session
+  inter_packet_delay:   0.5     # Seconds between packets within a session
+  inter_session_delay:  1.0     # Seconds between sessions (keeps logs readable)
+
+# -----------------------------------------------------------------------------
+# AI models (Phase 3)
+# -----------------------------------------------------------------------------
+ai:
+  openai_api_key:    "REPLACE_ME"          # sk-...
+  openai_model:      "gpt-4o"
+  anthropic_api_key: "REPLACE_ME"          # sk-ant-...
+  anthropic_model:   "claude-sonnet-4-6"
+  max_tokens:        4096
+
+# -----------------------------------------------------------------------------
+# Lab metadata
+# -----------------------------------------------------------------------------
+lab:
+  tag:                      "LAB-TEST-2025"
+  output_dir:               "lab_output"
+  rules_backup_file:        "generated_rules.json"
+  analysis_report_file:     "analysis_report.json"
+  observation_window_hours: 24    # Window for unused-rule detection (Phase 3)
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+logging:
+  level:    "INFO"       # DEBUG | INFO | WARNING | ERROR
+  log_file: "lab.log"
