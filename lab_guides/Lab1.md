@@ -157,3 +157,134 @@ Estimated: **60–70 minutes**
    ![Screenshot: FMG Device Status Check](screenshots/fmg-device-status-check.png)
 
 3. Ensure no communication errors appear before continuing to Lab 2.
+
+---
+
+# Exercise 3: Create REST API Tokens for Lab Automation
+
+## Task 1: Create a Dedicated Administrator Profile on FortiGate
+
+Before creating the API user, define what it is allowed to do.
+
+1. Log in to the FortiGate GUI at `https://192.168.1.1`.
+
+   ![Screenshot: FortiGate GUI Login](screenshots/fgt-gui-login.png)
+
+2. Go to **System → Admin Profiles**.
+
+   ![Screenshot: Admin Profiles](screenshots/fgt-admin-profiles.png)
+
+3. Click **Create New** to build a profile specifically for the lab script. Name it `Lab_API_Profile`.
+
+4. Under **Access Control**, locate the **Firewall** area and set it to **Read/Write**.
+
+   > This permission is required for the script to create, modify, and delete firewall policies.
+
+   ![Screenshot: Admin Profile Permissions](screenshots/fgt-admin-profile-permissions.png)
+
+5. Click **OK** to save the profile.
+
+---
+
+## Task 2: Create the REST API Administrator on FortiGate
+
+1. Go to **System → Administrators**.
+
+   ![Screenshot: Administrators](screenshots/fgt-administrators.png)
+
+2. Click **Create New → REST API Admin**.
+
+   ![Screenshot: Create REST API Admin](screenshots/fgt-create-api-admin.png)
+
+3. Assign the profile created in Task 1: select `Lab_API_Profile`.
+
+4. Ensure **PKI Group** is not required (leave it disabled unless your environment uses certificate-based authentication).
+
+---
+
+## Task 3: Restrict Access via Trusted Hosts
+
+1. Within the REST API Admin configuration, enable **Restrict login to trusted hosts**.
+
+   ![Screenshot: Trusted Hosts](screenshots/fgt-trusted-hosts.png)
+
+2. Enter the IP address or subnet of the machine where the lab Python script will run (e.g., `192.168.1.100/32` for Linux Host A).
+
+   > **Security note:** Do not leave this as `0.0.0.0/0`. Restricting to a known source IP prevents unauthorized use of the token.
+
+3. Click **OK** to save.
+
+---
+
+## Task 4: Generate and Save the FortiGate API Token
+
+1. After clicking **OK**, FortiOS displays the generated API token.
+
+   ![Screenshot: API Token Generated](screenshots/fgt-api-token.png)
+
+2. **Copy this token immediately and store it securely.** The token is displayed only once and cannot be retrieved later. If lost, you must generate a new one.
+
+3. Keep the token available — you will paste it into `config.yaml` in Task 6.
+
+---
+
+## Task 5: Create the REST API Token on FortiAnalyzer
+
+1. Log in to the **FortiAnalyzer** GUI at `https://172.16.0.2`.
+
+   ![Screenshot: FortiAnalyzer Login](screenshots/faz-gui-login.png)
+
+2. Go to **System Settings → Administrators**.
+
+   ![Screenshot: FAZ Administrators](screenshots/faz-administrators.png)
+
+3. Click **Create New → REST API Admin**.
+
+4. Assign appropriate read permissions for log and report access.
+
+5. Click **OK**. Copy and save the generated token immediately.
+
+   ![Screenshot: FAZ API Token](screenshots/faz-api-token.png)
+
+---
+
+## Task 6: Configure the Lab Tool
+
+1. On Linux Host A, navigate to the lab directory:
+
+```bash
+cd ~/ruleTrafficGenerator
+```
+
+2. Copy the example config file:
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+3. Open `config.yaml` in a text editor and fill in the following values:
+
+   - `fortigate.host` — set to `192.168.1.1`
+   - `fortigate.api_token` — paste the token generated in Task 4
+   - `fortianalyzer.host` — set to `172.16.0.2`
+   - `fortianalyzer.api_token` — paste the token generated in Task 5
+
+4. Save the file.
+
+5. Install Python dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+6. Verify connectivity by running a dry-run of Phase 1:
+
+```bash
+python3 main.py rules --count 10 --dry-run
+```
+
+   > A successful dry-run prints generated rule definitions without pushing anything to FortiGate. No errors should appear.
+
+   ![Screenshot: Dry Run Output](screenshots/cli-dry-run.png)
