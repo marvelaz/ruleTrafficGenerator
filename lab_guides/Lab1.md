@@ -40,13 +40,13 @@ Estimated: **60–70 minutes**
 ```
    config system interface
        edit port1
-           set ip 192.168.1.99/24
+           set ip 192.168.1.1/24
            set allowaccess ping https ssh
        next
    end
 ```
 
-6. From your workstation, open a browser and navigate to `https://192.168.1.99`.
+6. From your workstation, open a browser and navigate to `https://192.168.1.1`.
 
    ![Screenshot: FortiGate GUI Login](screenshots/fgt-gui-login.png)
 
@@ -59,8 +59,8 @@ Estimated: **60–70 minutes**
    ![Screenshot: Deploying FMG/FAZ](screenshots/deploy-fmg-faz.png)
 
 2. Assign IP addresses to both:
-   - FMG: `192.168.1.100`
-   - FAZ: `192.168.1.101`
+   - FMG: `172.16.0.3` (management network)
+   - FAZ: `172.16.0.2` (management network)
 
 3. Log in to each GUI and complete the initial setup wizards.
 
@@ -78,7 +78,7 @@ Estimated: **60–70 minutes**
 
 2. Choose **Add Device Manually**.
 
-3. Enter the FortiGate's IP address: `192.168.1.99`.
+3. Enter the FortiGate's IP address: `192.168.1.1`.
 
 4. Select the correct **ADOM**.
    > Make sure the ADOM matches the FortiGate firmware version and branch.
@@ -101,7 +101,7 @@ Estimated: **60–70 minutes**
 
    ![Screenshot: Security Fabric Setup](screenshots/fgt-security-fabric-setup.png)
 
-3. Enter the FAZ IP (`192.168.1.101`) as the log forwarding target.
+3. Enter the FAZ IP (`172.16.0.2`) as the log forwarding target.
 
 4. On FortiAnalyzer, verify that logs are received by going to **Log View** and confirming events from the FortiGate.
 
