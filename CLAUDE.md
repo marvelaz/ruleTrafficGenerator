@@ -39,9 +39,9 @@ scenario.md              # Full scenario specification (source of truth for desi
 
 | Component       | Role                          | IP / Interface                        |
 |-----------------|-------------------------------|---------------------------------------|
-| **FortiGate**   | Firewall under test           | port1 (inside) `192.168.1.1/24`, port2 (outside) `10.0.0.1/24`, mgmt `172.16.0.1/24` |
-| **FortiAnalyzer** | Log aggregation + reporting | mgmt `172.16.0.2/24`                  |
-| **FortiManager** | Central policy management    | mgmt `172.16.0.3/24`                  |
+| **FortiGate**   | Firewall under test           | port1 (inside) `192.168.1.4/24`, port2 (outside) `10.10.0.4/24`, mgmt `172.16.0.4/24` |
+| **FortiAnalyzer** | Log aggregation + reporting | mgmt `172.16.0.5/24`                  |
+| **FortiManager** | Central policy management    | mgmt `172.16.0.6/24`                  |
 | **linux1**      | Inside traffic source         | `192.168.1.100` + aliases `.101–.110` |
 | **linux2**      | Outside traffic source        | `10.10.0.100` + aliases `.101–.110`   |
 

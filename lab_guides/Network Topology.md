@@ -22,13 +22,13 @@ This setup allows you to test policies, analyze logs, and validate AI‑generate
 
 | Device                | Interface       | IP Address    | Subnet Mask | Gateway     | Network     |
 | --------------------- | --------------- | ------------- | ----------- | ----------- | ----------- |
-| **FortiGate 8.0**     | port1 (Inside)  | 192.168.1.1   | /24         | —           | Inside LAN  |
-| **FortiGate 8.0**     | port2 (Outside) | 10.10.0.1     | /24         | —           | Outside WAN |
-| **FortiGate 8.0**     | mgmt            | 172.16.0.1    | /24         | —           | Management  |
-| **FortiAnalyzer 8.0** | mgmt            | 172.16.0.2    | /24         | 172.16.0.1  | Management  |
-| **FortiManager 8.0**  | mgmt            | 172.16.0.3    | /24         | 172.16.0.1  | Management  |
-| **Linux Host A**      | eth0            | 192.168.1.100 | /24         | 192.168.1.1 | Inside LAN  |
-| **Linux Host B**      | eth0            | 10.10.0.100   | /24         | 10.10.0.1   | Outside WAN |
+| **FortiGate 8.0**     | port1 (Inside)  | 192.168.1.4   | /24         | —           | Inside LAN  |
+| **FortiGate 8.0**     | port2 (Outside) | 10.10.0.4     | /24         | —           | Outside WAN |
+| **FortiGate 8.0**     | mgmt            | 172.16.0.4    | /24         | —           | Management  |
+| **FortiAnalyzer 8.0** | mgmt            | 172.16.0.5    | /24         | 172.16.0.4  | Management  |
+| **FortiManager 8.0**  | mgmt            | 172.16.0.6    | /24         | 172.16.0.4  | Management  |
+| **Linux Host A**      | eth0            | 192.168.1.100 | /24         | 192.168.1.4 | Inside LAN  |
+| **Linux Host B**      | eth0            | 10.10.0.100   | /24         | 10.10.0.4   | Outside WAN |
 
 > **VDOM:** The FortiGate targets VDOM `root` by default. All lab policies are installed into this VDOM.
 

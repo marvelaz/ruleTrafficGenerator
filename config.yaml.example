@@ -9,7 +9,7 @@
 # FortiGate
 # -----------------------------------------------------------------------------
 fortigate:
-  host:       "192.168.1.1"       # FortiGate management IP or FQDN
+  host:       "192.168.1.4"       # FortiGate management IP or FQDN
   port:       443
   api_token:  "REPLACE_ME"        # REST API token (System > API Tokens)
   vdom:       "root"              # Target VDOM
@@ -20,7 +20,7 @@ fortigate:
 # FortiAnalyzer
 # -----------------------------------------------------------------------------
 fortianalyzer:
-  host:       "192.168.1.2"       # FortiAnalyzer management IP or FQDN
+  host:       "172.16.0.5"        # FortiAnalyzer management IP or FQDN
   port:       443
   api_token:  "REPLACE_ME"        # FAZ API token (System Settings > Admin > API)
   adom:       "root"              # ADOM containing the FortiGate device

@@ -215,7 +215,7 @@ hping3 -S -p 3306 -c 5 10.10.0.100
 
 ## Task 1: Confirm FortiGate → FortiAnalyzer Log Ingestion
 
-1. Log in to **FortiAnalyzer** at `https://172.16.0.2`.
+1. Log in to **FortiAnalyzer** at `https://172.16.0.5`.
 
 2. Open: **Log View → Traffic Logs**
 

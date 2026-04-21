@@ -40,13 +40,13 @@ Estimated: **60–70 minutes**
 ```
    config system interface
        edit port1
-           set ip 192.168.1.1/24
+           set ip 192.168.1.4/24
            set allowaccess ping https ssh
        next
    end
 ```
 
-6. From your workstation, open a browser and navigate to `https://192.168.1.1`.
+6. From your workstation, open a browser and navigate to `https://192.168.1.4`.
 
    ![Screenshot: FortiGate GUI Login](screenshots/fgt-gui-login.png)
 
@@ -59,8 +59,8 @@ Estimated: **60–70 minutes**
    ![Screenshot: Deploying FMG/FAZ](screenshots/deploy-fmg-faz.png)
 
 2. Assign IP addresses to both:
-   - FMG: `172.16.0.3` (management network)
-   - FAZ: `172.16.0.2` (management network)
+   - FMG: `172.16.0.6` (management network)
+   - FAZ: `172.16.0.5` (management network)
 
 3. Log in to each GUI and complete the initial setup wizards.
 
@@ -78,7 +78,7 @@ Estimated: **60–70 minutes**
 
 2. Choose **Add Device Manually**.
 
-3. Enter the FortiGate's IP address: `192.168.1.1`.
+3. Enter the FortiGate's IP address: `192.168.1.4`.
 
 4. Select the correct **ADOM**.
    > Make sure the ADOM matches the FortiGate firmware version and branch.
@@ -101,7 +101,7 @@ Estimated: **60–70 minutes**
 
    ![Screenshot: Security Fabric Setup](screenshots/fgt-security-fabric-setup.png)
 
-3. Enter the FAZ IP (`172.16.0.2`) as the log forwarding target.
+3. Enter the FAZ IP (`172.16.0.5`) as the log forwarding target.
 
 4. On FortiAnalyzer, verify that logs are received by going to **Log View** and confirming events from the FortiGate.
 
@@ -166,7 +166,7 @@ Estimated: **60–70 minutes**
 
 Before creating the API user, define what it is allowed to do.
 
-1. Log in to the FortiGate GUI at `https://192.168.1.1`.
+1. Log in to the FortiGate GUI at `https://192.168.1.4`.
 
    ![Screenshot: FortiGate GUI Login](screenshots/fgt-gui-login.png)
 
@@ -230,7 +230,7 @@ Before creating the API user, define what it is allowed to do.
 
 ## Task 5: Create the REST API Token on FortiAnalyzer
 
-1. Log in to the **FortiAnalyzer** GUI at `https://172.16.0.2`.
+1. Log in to the **FortiAnalyzer** GUI at `https://172.16.0.5`.
 
    ![Screenshot: FortiAnalyzer Login](screenshots/faz-gui-login.png)
 
@@ -264,9 +264,9 @@ cp config.yaml.example config.yaml
 
 3. Open `config.yaml` in a text editor and fill in the following values:
 
-   - `fortigate.host` — set to `192.168.1.1`
+   - `fortigate.host` — set to `192.168.1.4`
    - `fortigate.api_token` — paste the token generated in Task 4
-   - `fortianalyzer.host` — set to `172.16.0.2`
+   - `fortianalyzer.host` — set to `172.16.0.5`
    - `fortianalyzer.api_token` — paste the token generated in Task 5
 
 4. Save the file.
