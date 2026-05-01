@@ -36,7 +36,7 @@ Usage examples:
   python3 main.py analyze
 
   # For AI analysis, hand the generated reports to OpenCode + OpenRouter
-  # (see Lab 4 in lab_guides/Lab4.md)
+  # (see Lab 4 in lab_guides/05-lab4.md)
 
   # Phase 4: Delete lab logs (prompts for confirmation)
   python3 main.py cleanup
