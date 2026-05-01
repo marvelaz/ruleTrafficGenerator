@@ -61,10 +61,6 @@ SERVICES = [
 
 INSIDE_SUBNETS = [
     "192.168.1.0/24",
-    "192.168.2.0/24",
-    "192.168.10.0/24",
-    "172.16.0.0/24",
-    "172.16.1.0/24",
 ]
 
 OUTSIDE_SUBNETS = [
@@ -197,6 +193,58 @@ class FortiGateAPI:
 
 
 # ---------------------------------------------------------------------------
+# Policy name generator
+# ---------------------------------------------------------------------------
+
+_SVC_ABBREV: dict[str, str] = {
+    "HTTP":     "WEB",
+    "HTTPS":    "WEBS",
+    "SSH":      "SSH",
+    "DNS":      "DNS",
+    "SMTP":     "MAIL",
+    "MYSQL":    "DB",
+    "RDP":      "RDP",
+    "FTP":      "FTP",
+    "NTP":      "NTP",
+    "SNMP":     "MGMT",
+    "PING":     "PING",
+    "LDAP":     "LDAP",
+    "MS-SQL":   "SQL",
+    "IMAP":     "IMAP",
+    "POP3":     "POP3",
+    "TELNET":   "TEL",
+    "KERBEROS": "AUTH",
+    "NFS":      "NFS",
+    "RADIUS":   "AUTH",
+    "SYSLOG":   "LOG",
+}
+
+
+def _rule_name(src_addr: str, dst_addr: str, svc_name: str, counter: int) -> str:
+    """
+    Generate a realistic-looking policy name from zone + service + counter.
+    Reveals nothing about overlap type — looks like an admin-authored rule.
+    Examples: CORP-INET-WEB-0042, MGMT-WAN-SSH-0017
+    """
+    if "192-168" in src_addr:
+        src_zone = "CORP"
+    elif "172-16" in src_addr:
+        src_zone = "MGMT"
+    else:
+        src_zone = "LAN"
+
+    if "10-10" in dst_addr:
+        dst_zone = "INET"
+    elif any(x in dst_addr for x in ("10-20", "10-30", "10-40")):
+        dst_zone = "WAN"
+    else:
+        dst_zone = "EXT"
+
+    svc = _SVC_ABBREV.get(svc_name, svc_name[:4].upper())
+    return f"{src_zone}-{dst_zone}-{svc}-{counter:04d}"
+
+
+# ---------------------------------------------------------------------------
 # Address + Service Object Builder
 # ---------------------------------------------------------------------------
 
@@ -237,8 +285,6 @@ def build_address_pool(n_rules: int) -> list[dict]:
     # /32 hosts (for shadow rules and overlapping with /24 or /28)
     sample_hosts = [
         "192.168.1.10", "192.168.1.20", "192.168.1.50", "192.168.1.100", "192.168.1.150",
-        "192.168.2.10", "192.168.2.20", "192.168.2.100", "192.168.2.150",
-        "172.16.0.10",  "172.16.0.50",  "172.16.1.10",  "172.16.1.50",
         "10.10.0.10",   "10.10.0.20",   "10.10.0.50",   "10.10.0.100", "10.10.0.150",
         "10.10.1.10",   "10.10.1.50",   "10.20.0.5",    "10.20.0.100",
         "10.30.0.10",   "10.40.0.10",
@@ -263,10 +309,10 @@ def _make_policy(
     src_addr: str,
     dst_addr: str,
     service: str,
+    srcintf: str,
+    dstintf: str,
     action: str = "accept",
-    comment: str = "",
-    srcintf: str = "port2",
-    dstintf: str = "port3",
+    policy_type: str = "",
 ) -> dict:
     return {
         "name": name,
@@ -278,18 +324,39 @@ def _make_policy(
         "action": action,
         "schedule": "always",
         "status": "enable",
-        "logtraffic": "all",
-        "logtraffic-start": "enable",
-        "comments": f"{TAG} seq={seq} {comment}".strip(),
+        "logtraffic": "utm",
+        "logtraffic-start": "disable",
+        "inspection-mode": "flow",
+        "ssl-ssh-profile": "no-inspection",
+        "profile-type": "single",
+        "profile-protocol-options": "default",
+        "utm-status": "disable",
+        "match-vip": "enable",
+        "comments": TAG,               # tag only — no type hint visible in FortiGate UI
         "nat": "disable",
+        "_seq": seq,
+        "_type": policy_type,          # internal only — stripped before API push
     }
 
 
-def generate_policies(n: int, address_pool: list[dict]) -> tuple[list[dict], dict]:
+def generate_policies(n: int, address_pool: list[dict], ratios: dict,
+                      srcintf: str, dstintf: str) -> tuple[list[dict], dict]:
     """
-    Generate n policies with deliberate overlap patterns.
-    Returns (policies list, metadata dict with overlap stats).
+    Generate exactly n policies with deliberate overlap patterns.
+
+    ratios: dict with keys shadow, duplicate, subnet_overlap, service_overlap, clean.
+            Values are relative weights (auto-normalized — don't need to sum to 1).
+            clean always fills the remainder so the final count is exactly n.
+
+    Policy-count math:
+      shadow/duplicate/subnet_overlap each emit 2 policies per group.
+      service_overlap emits 2–4 per group (capped to avoid overshoot).
+      clean emits 1 per group and fills the gap to reach exactly n.
     """
+    # Normalize ratios
+    total_weight = sum(ratios.values())
+    r = {k: v / total_weight for k, v in ratios.items()}
+
     policies = []
     metadata = {
         "total": n,
@@ -301,124 +368,120 @@ def generate_policies(n: int, address_pool: list[dict]) -> tuple[list[dict], dic
     }
 
     # Separate broad vs narrow address objects
-    broad = [a for a in address_pool if "/" in a["cidr"] and
-             int(a["cidr"].split("/")[1]) <= 24]
-    narrow = [a for a in address_pool if "/" in a["cidr"] and
-              int(a["cidr"].split("/")[1]) > 24]
-    hosts = [a for a in address_pool if a["cidr"].endswith("/32")]
+    broad  = [a for a in address_pool if "/" in a["cidr"] and int(a["cidr"].split("/")[1]) <= 24]
+    narrow = [a for a in address_pool if "/" in a["cidr"] and int(a["cidr"].split("/")[1]) > 24]
+    hosts  = [a for a in address_pool if a["cidr"].endswith("/32")]
 
-    inside_broad  = [a for a in broad if any(a["cidr"].startswith(p)
-                     for p in ["192.168.", "172.16."])]
-    outside_broad = [a for a in broad if a["cidr"].startswith("10.")]
-    inside_narrow = [a for a in narrow if any(a["cidr"].startswith(p)
-                     for p in ["192.168.", "172.16."])]
-    outside_narrow= [a for a in narrow if a["cidr"].startswith("10.")]
-    inside_hosts  = [a for a in hosts if any(a["cidr"].startswith(p)
-                     for p in ["192.168.", "172.16."])]
-    outside_hosts = [a for a in hosts if a["cidr"].startswith("10.")]
+    inside_broad   = [a for a in broad  if a["cidr"].startswith("192.168.1.")]
+    outside_broad  = [a for a in broad  if a["cidr"].startswith("10.")]
+    inside_narrow  = [a for a in narrow if a["cidr"].startswith("192.168.1.")]
+    outside_narrow = [a for a in narrow if a["cidr"].startswith("10.")]
+    inside_hosts   = [a for a in hosts  if a["cidr"].startswith("192.168.1.")]
+    outside_hosts  = [a for a in hosts  if a["cidr"].startswith("10.")]
 
-    # Fallback if lists are too short
-    if not inside_broad:  inside_broad  = address_pool[:3]
-    if not outside_broad: outside_broad = address_pool[3:6]
-    if not inside_narrow: inside_narrow = inside_broad
-    if not outside_narrow:outside_narrow= outside_broad
-    if not inside_hosts:  inside_hosts  = inside_narrow
-    if not outside_hosts: outside_hosts = outside_narrow
-
-    # Determine overlap distribution
-    # Clean: ~35%, Shadow: ~20%, Duplicate: ~15%, SubnetOverlap: ~15%, SvcOverlap: ~15%
-    n_clean   = int(n * 0.35)
-    n_shadow  = int(n * 0.20)
-    n_dup     = int(n * 0.15)
-    n_subnet  = int(n * 0.15)
-    n_svc     = n - n_clean - n_shadow - n_dup - n_subnet
+    if not inside_broad:   inside_broad   = address_pool[:3]
+    if not outside_broad:  outside_broad  = address_pool[3:6]
+    if not inside_narrow:  inside_narrow  = inside_broad
+    if not outside_narrow: outside_narrow = outside_broad
+    if not inside_hosts:   inside_hosts   = inside_narrow
+    if not outside_hosts:  outside_hosts  = outside_narrow
 
     seq = 1
 
-    # --- Clean rules ---
-    for i in range(n_clean):
-        src = random.choice(inside_broad + inside_narrow)
-        dst = random.choice(outside_broad + outside_narrow)
-        svc = random.choice(SERVICES)
-        name = f"LAB-CLEAN-{seq:04d}"
-        policies.append(_make_policy(seq, name, src["name"], dst["name"],
-                                     svc["name"], comment="type=clean"))
-        metadata["clean"] += 1
-        seq += 1
+    # Target policy counts per type (not iteration counts).
+    # shadow/dup/subnet each need an even number (2 policies per group).
+    # service_overlap target is filled exactly by capping the last group.
+    # clean fills whatever remains to reach exactly n.
+    n_shadow_target  = round(n * r["shadow"])  & ~1   # round to even
+    n_dup_target     = round(n * r["duplicate"]) & ~1
+    n_subnet_target  = round(n * r["subnet_overlap"]) & ~1
+    n_svc_target     = round(n * r["service_overlap"])
 
-    # --- Shadow rules ---
-    # First insert a broad ANY-like rule, then insert a narrower rule after it
-    for i in range(n_shadow):
+    # --- Shadow rules (2 per group: broad + unreachable narrow) ---
+    for _ in range(n_shadow_target // 2):
         src_broad = random.choice(inside_broad)
         dst_broad = random.choice(outside_broad)
         svc = random.choice(SERVICES)
-
-        # Broad rule (will shadow the specific one placed after)
-        name_broad = f"LAB-BROAD-{seq:04d}"
-        policies.append(_make_policy(seq, name_broad, src_broad["name"], dst_broad["name"],
-                                     svc["name"], comment="type=shadow-broad"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src_broad["name"], dst_broad["name"], svc["name"], seq),
+                                     src_broad["name"], dst_broad["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="shadow-broad"))
         seq += 1
-
-        # Narrow rule — shadowed by the broad rule above
         src_narrow = random.choice(inside_hosts + inside_narrow)
         dst_narrow = random.choice(outside_hosts + outside_narrow)
-        name_narrow = f"LAB-SHADOW-{seq:04d}"
-        policies.append(_make_policy(seq, name_narrow, src_narrow["name"], dst_narrow["name"],
-                                     svc["name"], comment="type=shadow-specific"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src_narrow["name"], dst_narrow["name"], svc["name"], seq),
+                                     src_narrow["name"], dst_narrow["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="shadow-specific"))
         metadata["shadow"] += 1
         seq += 1
 
-    # --- Duplicate rules (same logic, different name) ---
-    for i in range(n_dup):
+    # --- Duplicate rules (2 per group: identical match criteria, different names) ---
+    for _ in range(n_dup_target // 2):
         src = random.choice(inside_broad)
         dst = random.choice(outside_broad)
         svc = random.choice(SERVICES)
-        name_a = f"LAB-DUP-A-{seq:04d}"
-        policies.append(_make_policy(seq, name_a, src["name"], dst["name"],
-                                     svc["name"], comment="type=duplicate"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src["name"], dst["name"], svc["name"], seq),
+                                     src["name"], dst["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="duplicate"))
         seq += 1
-        name_b = f"LAB-DUP-B-{seq:04d}"
-        policies.append(_make_policy(seq, name_b, src["name"], dst["name"],
-                                     svc["name"], comment="type=duplicate"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src["name"], dst["name"], svc["name"], seq),
+                                     src["name"], dst["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="duplicate"))
         metadata["duplicate"] += 1
         seq += 1
 
-    # --- Overlapping subnet ranges ---
-    # /24 rule + /28 or /32 rule covering same space
-    for i in range(n_subnet):
+    # --- Subnet overlap rules (2 per group: /24 broad + /28 or /32 specific) ---
+    for _ in range(n_subnet_target // 2):
         src_broad  = random.choice(inside_broad)
         src_narrow = random.choice(inside_narrow + inside_hosts)
         dst = random.choice(outside_broad)
         svc = random.choice(SERVICES)
-        name_wide = f"LAB-WIDE-{seq:04d}"
-        policies.append(_make_policy(seq, name_wide, src_broad["name"], dst["name"],
-                                     svc["name"], comment="type=subnet-overlap-broad"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src_broad["name"], dst["name"], svc["name"], seq),
+                                     src_broad["name"], dst["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="subnet-overlap-broad"))
         seq += 1
-        name_spec = f"LAB-SPEC-{seq:04d}"
-        policies.append(_make_policy(seq, name_spec, src_narrow["name"], dst["name"],
-                                     svc["name"], comment="type=subnet-overlap-specific"))
+        policies.append(_make_policy(seq,
+                                     _rule_name(src_narrow["name"], dst["name"], svc["name"], seq),
+                                     src_narrow["name"], dst["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="subnet-overlap-specific"))
         metadata["subnet_overlap"] += 1
         seq += 1
 
-    # --- Same src/dst, different services (collapsible) ---
-    for i in range(n_svc):
+    # --- Service overlap rules (2–4 per group, capped to avoid overshoot) ---
+    svc_count = 0
+    while svc_count < n_svc_target:
         src = random.choice(inside_broad)
         dst = random.choice(outside_broad)
-        svcs = random.sample(SERVICES, k=random.randint(2, 4))
-        for svc in svcs:
-            name = f"LAB-MSVC-{seq:04d}"
-            policies.append(_make_policy(seq, name, src["name"], dst["name"],
-                                         svc["name"], comment="type=svc-overlap"))
+        k = min(random.randint(2, 4), n_svc_target - svc_count)
+        for svc in random.sample(SERVICES, k=k):
+            policies.append(_make_policy(seq,
+                                         _rule_name(src["name"], dst["name"], svc["name"], seq),
+                                         src["name"], dst["name"],
+                                         svc["name"], srcintf, dstintf, policy_type="svc-overlap"))
             seq += 1
+        svc_count += k
         metadata["service_overlap"] += 1
 
-    # Shuffle to distribute overlap types throughout the policy list
-    # (makes it less obvious during manual inspection)
-    random.shuffle(policies)
+    # --- Clean rules — fill remainder to reach exactly n ---
+    for _ in range(max(0, n - len(policies))):
+        src = random.choice(inside_broad + inside_narrow)
+        dst = random.choice(outside_broad + outside_narrow)
+        svc = random.choice(SERVICES)
+        policies.append(_make_policy(seq,
+                                     _rule_name(src["name"], dst["name"], svc["name"], seq),
+                                     src["name"], dst["name"],
+                                     svc["name"], srcintf, dstintf, policy_type="clean"))
+        metadata["clean"] += 1
+        seq += 1
 
-    # Re-number names after shuffle for stable reference
+    # Shuffle to hide overlap patterns during manual inspection
+    random.shuffle(policies)
     for idx, p in enumerate(policies):
-        p["_seq"] = idx + 1  # internal reference only
+        p["_seq"] = idx + 1
 
     metadata["total_pushed"] = len(policies)
     return policies, metadata
@@ -442,11 +505,14 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
 
     api = FortiGateAPI(cfg["fortigate"])
     tag = cfg["lab"]["tag"]
+    srcintf = cfg["fortigate"].get("inside_interface", "port2")
+    dstintf = cfg["fortigate"].get("outside_interface", "port1")
 
     console.rule("[bold cyan]Phase 1 — Rule Generation")
     console.print(f"Target rule count : [bold]{n_rules}[/bold]")
     console.print(f"FortiGate         : [bold]{cfg['fortigate']['host']}[/bold]")
     console.print(f"VDOM              : [bold]{cfg['fortigate']['vdom']}[/bold]")
+    console.print(f"Interfaces        : [bold]{srcintf}[/bold] (inside) → [bold]{dstintf}[/bold] (outside)")
     console.print(f"Dry run           : [bold]{dry_run}[/bold]")
 
     # Build address pool
@@ -473,9 +539,18 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
         # Use built-in FortiGate services directly (no custom service creation needed)
         console.print("  Using built-in FortiGate services")
 
+    # Load ratios from config (with hardcoded defaults as fallback)
+    ratios = cfg.get("rules", {}).get("ratios", {
+        "shadow":          0.20,
+        "duplicate":       0.15,
+        "subnet_overlap":  0.15,
+        "service_overlap": 0.15,
+        "clean":           0.35,
+    })
+
     # Generate policies
     console.print("\n[cyan]Generating policy objects...")
-    policies, metadata = generate_policies(n_rules, address_pool)
+    policies, metadata = generate_policies(n_rules, address_pool, ratios, srcintf, dstintf)
     console.print(f"  Total policies generated : {len(policies)}")
     console.print(f"  Clean                    : {metadata['clean']}")
     console.print(f"  Shadow                   : {metadata['shadow']}")

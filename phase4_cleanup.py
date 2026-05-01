@@ -240,10 +240,11 @@ def run(config_path: str, force: bool = False):
 
     obs_hours = cfg["lab"]["observation_window_hours"]
     tag       = cfg["lab"]["tag"]
+    faz_cfg   = cfg.get("fortianalyzer")
 
     console.rule("[bold red]Phase 4 — Log Cleanup")
-    console.print(f"[yellow]This will delete log entries tagged [bold]{tag}[/bold] "
-                  f"from both FortiGate and FortiAnalyzer.")
+    targets = "FortiGate" + (" and FortiAnalyzer" if faz_cfg else "")
+    console.print(f"[yellow]This will delete log entries tagged [bold]{tag}[/bold] from {targets}.")
     console.print(f"[yellow]Time window: last {obs_hours} hours.")
     console.print("[yellow]Pre-existing logs are NOT affected.\n")
 
@@ -259,10 +260,13 @@ def run(config_path: str, force: bool = False):
     fgt_cleaner = FortiGateLogCleaner(cfg["fortigate"])
     results["fortigate"] = fgt_cleaner.delete_all_lab_log_types()
 
-    # FortiAnalyzer cleanup
-    console.print("\n[cyan]FortiAnalyzer log cleanup...")
-    faz_cleaner = FortiAnalyzerLogCleaner(cfg["fortianalyzer"])
-    results["fortianalyzer"] = faz_cleaner.delete_logs_by_tag(tag, obs_hours * 2)
+    # FortiAnalyzer cleanup (optional — skipped if `fortianalyzer:` block is absent in config)
+    if faz_cfg:
+        console.print("\n[cyan]FortiAnalyzer log cleanup...")
+        faz_cleaner = FortiAnalyzerLogCleaner(faz_cfg)
+        results["fortianalyzer"] = faz_cleaner.delete_logs_by_tag(tag, obs_hours * 2)
+    else:
+        console.print("\n[dim]FortiAnalyzer cleanup skipped (no `fortianalyzer` block in config.yaml).[/dim]")
 
     # Summary
     console.rule("[bold]Cleanup Summary")

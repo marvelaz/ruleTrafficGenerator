@@ -1,40 +1,128 @@
-# Lab 2 — Traffic Generation & Log Analytics Pipeline
+# Lab 2 — Rule Generation, Traffic & Hit-Count Verification
 
-**Estimated Time:** 60–70 minutes
+**Estimated Time:** 45–60 minutes (add ~30 minutes if you complete the optional FortiAnalyzer appendix)
 
 ## Goal
 
-Use the lab automation tool to generate realistic bidirectional traffic across FortiGate, confirm end-to-end logging into FortiAnalyzer, and build analytics that show policy hit counts. This data is the foundation for the AI-assisted analysis in Lab 3.
+Use the lab automation tool to generate intentionally flawed firewall rules, produce realistic traffic through FortiGate, and verify per-policy hit counts on FortiGate. This data is the foundation for the analysis in Labs 3 and 4.
+
+> If you completed the optional FortiAnalyzer appendix in Lab 1, an appendix at the end of this lab also walks through end-to-end log ingestion, a custom Policy Hit Count dataset/report, and the Natural Language Query (NLQ) playground — none of which are required by Lab 3 or Lab 4.
 
 ## Design Intent
 
-The traffic generator is deliberately calibrated to match **60–75%** of configured firewall rules. The remaining **25–40%** of rules will have zero hit counts. Those zero-hit rules are the candidates for unused-rule detection — do not try to fix them; they are intentional.
+The rule set is deliberately constructed with four overlap patterns — shadow rules, duplicates, subnet overlaps, and collapsible service groups — mixed with clean rules. Students will not know which rules are flawed until they run the analysis tools in Labs 3 and 4.
 
-All rules and log entries created by the tool are tagged `LAB-TEST-2025`. This tag makes every log entry filterable and ensures cleanup operations only affect lab-generated data.
+The traffic generator is calibrated to match **60–75%** of configured rules. The remaining **25–40%** will have zero hit counts — these are intentional candidates for unused-rule detection.
+
+All rules and log entries are tagged `LAB-TEST-2025`. All cleanup operations are strictly scoped to this tag.
 
 ------
 
 ## Tasks Overview
 
-- Set up IP aliases on both Linux hosts.
-- Generate baseline flows (ICMP, HTTP, HTTPS, SSH, DNS) and directed application traffic using the lab tool.
-- Verify FortiGate → FortiAnalyzer log ingestion and confirm policy IDs appear in traffic logs.
-- Build a Policy Hit Count dataset and report in FortiAnalyzer.
-- Test natural language queries (NLQ) against the collected log data.
+- **Exercise 1 — Phase 1:** Generate and push 100 firewall rules to FortiGate.
+- **Exercise 2 — Phase 2:** Set up IP aliases on Linux Host A and generate inside→outside traffic.
+- **Exercise 3 — Verify hit counts on FortiGate:** confirm policies are being matched via the FortiGate monitor API.
+
+> Note: "Phase 1 / Phase 2 / Phase 3" in this guide refers to the lab tool's pipeline stages defined in CLAUDE.md, not to the exercise numbering below.
+
+> **(Optional — FAZ)** If you completed the FortiAnalyzer appendix in Lab 1, three additional FAZ-only exercises are available at the end of this lab: log-ingestion verification, a custom Policy Hit Count dataset/report, and the Natural Language Query (NLQ) playground. They are **not required** by Lab 3 or Lab 4 — `phase3_traditional` reads hit counts straight from FortiGate.
 
 ------
 
-# Exercise 1: Prepare Linux Hosts for Traffic Generation
+# Exercise 1: Phase 1 — Generate and Push Firewall Rules
 
-## Task 1: Add IP Aliases to Both Linux Hosts
+This exercise must be completed before traffic generation. The lab tool generates firewall policies with realistic names and pushes them to FortiGate via REST API.
 
-Both Linux hosts need virtual IP aliases on their primary interface before traffic generation begins. These aliases simulate multiple distinct source and destination hosts, making traffic patterns appear realistic rather than single-host.
+## Task 1: Verify Configuration
+
+On Linux Host A, confirm `config.yaml` has the correct FortiGate credentials from Lab 1:
+
+```bash
+cd ~/ruleTrafficGenerator
+source .venv/bin/activate
+grep -E "host|api_token|vdom" config.yaml
+```
+
+Expected output:
+
+```
+  host:       "192.168.1.4"
+  api_token:  "your-token-here"
+  vdom:       "root"
+```
+
+------
+
+## Task 2: Run a Dry Run First
+
+Before pushing rules, generate a preview locally without touching FortiGate:
+
+```bash
+python3 main.py rules --count 10 --dry-run
+```
+
+Expected output:
+
+```
+Generating 10 rules (dry_run=True)...
+
+Phase 1 complete.
+  Total generated : 10
+```
+
+Review the printed policy names — they follow the `{SRC_ZONE}-{DST_ZONE}-{SVC}-{NNNN}` format (e.g. `CORP-INET-WEB-0042`). No type hint is visible in the name or comments.
+
+------
+
+## Task 3: Push 100 Rules to FortiGate
+
+```bash
+python3 main.py rules --count 100
+```
+
+Expected output:
+
+```
+Generating 100 rules (dry_run=False)...
+
+Phase 1 complete.
+  Total generated : 100
+  Pushed          : 100
+  Failed          : 0
+```
+
+> If any rules fail, check that the API token has Read/Write access to Firewall Policy and that FortiGate is reachable at `192.168.1.4`.
+
+------
+
+## Task 4: Verify Rules on FortiGate
+
+1. Log in to the FortiGate GUI at `https://192.168.1.4`.
+2. Go to **Policy & Objects → Firewall Policy**.
+3. Filter by comment: search for `LAB-TEST-2025`.
+4. Confirm 100 rules appear with realistic names.
+
+> **Note:** The overlap type (shadow, duplicate, etc.) is intentionally hidden. Rules look identical to real-world policies.
+
+------
+
+# Exercise 2: Phase 2 — Generate Inside-to-Outside Traffic
+
+## Task 1: Add IP Aliases to Linux Host A
+
+Linux Host A needs virtual IP aliases on its primary interface before traffic generation begins. These aliases simulate multiple distinct source hosts, making traffic patterns appear realistic rather than single-host.
+
+> **Note:** Only Linux Host A is required. All lab rules are inside→outside, so Linux Host B is not needed for traffic generation.
 
 Run the following command **on Linux Host A** (inside, `192.168.1.100`) as root:
 
 ```bash
-sudo python3 main.py traffic --setup-aliases
+source .venv/bin/activate
+sudo $(which python3) main.py traffic --setup-aliases
 ```
+
+> **Note:** Use `sudo $(which python3)` instead of `sudo python3`. When the virtual environment is active, `which python3` resolves to the venv's interpreter. Using `sudo python3` directly would invoke the system Python and fail with `ModuleNotFoundError: No module named 'rich'`.
 
 Expected output:
 
@@ -46,219 +134,168 @@ Added alias 192.168.1.110 to eth0
 Aliases configured successfully.
 ```
 
-Repeat **on Linux Host B** (outside, `10.10.0.100`) as root:
-
-```bash
-sudo python3 main.py traffic --setup-aliases
-```
-
-Expected output:
-
-```
-Added alias 10.10.0.101 to eth0
-Added alias 10.10.0.102 to eth0
-...
-Added alias 10.10.0.110 to eth0
-Aliases configured successfully.
-```
-
-> Aliases persist until removed with `--remove-aliases` or until the host is rebooted. You only need to run this once per host per session.
+> Aliases persist until removed with `--remove-aliases` or until the host is rebooted. You only need to run this once per session.
 
 ------
 
-# Exercise 2: Generate Baseline Traffic
+## Task 2: Generate Inside-to-Outside Traffic with the Lab Tool
 
-## Task 1: Generate Bidirectional Traffic Using the Lab Tool
-
-The primary traffic generation method uses the lab tool (`main.py`). It drives Scapy for packet crafting and hping3 for TCP flag variation, covering all traffic types required by the scenario.
-
-### Step 1 — Inside → Outside (run on Linux Host A)
+The lab tool drives Scapy for packet crafting, covering every traffic type the rule set exercises.
 
 ```bash
-sudo python3 main.py traffic --direction in2out
+sudo $(which python3) main.py traffic --direction in2out
 ```
 
-This sends traffic from Linux Host A (`192.168.1.100` and aliases `.101–.110`) toward Linux Host B (`10.10.0.100` and aliases `.101–.110`) through FortiGate port1 → port2.
+This sends traffic from Linux Host A (`192.168.1.100` and aliases `.101–.110`) toward destinations on the outside network through FortiGate `port2` (inside) → `port1` (outside).
 
-### Step 2 — Outside → Inside (run on Linux Host B)
-
-```bash
-sudo python3 main.py traffic --direction out2in
-```
-
-This sends traffic from Linux Host B (`10.10.0.100` and aliases `.101–.110`) toward Linux Host A through FortiGate port2 → port1.
-
-### Step 3 — Bidirectional with session limit (optional, single host)
-
-If your environment allows both directions from one host:
+To stop automatically after a fixed number of sessions:
 
 ```bash
-sudo python3 main.py traffic --direction both --sessions 200
+sudo $(which python3) main.py traffic --direction in2out --sessions 300
 ```
 
 > Stop traffic at any time with **Ctrl+C**. No daemon is running — traffic stops immediately.
 
+> **Design note:** All lab rules are inside→outside only. There is no out2in traffic step — Linux Host B is not required.
+
 ------
 
-## Task 2: Generate Baseline Flows Manually (Supplementary)
+## Task 3 (Optional): Sanity-Check Connectivity Without the Lab Tool
 
-These manual flows are useful for verifying that basic connectivity and logging work before running the full tool.
+> **Skip this task if you only have Linux Host A available.** The steps below need Linux Host B reachable through the FortiGate and are only useful for verifying basic connectivity before relying on the Scapy-based generator. Task 2 already produces all the traffic Lab 3 needs — these manual flows are supplementary.
 
-### Step 1 — ICMP
-
-From Linux Host A, ping Linux Host B:
+### Step 1 — ICMP (Host A → Host B through FortiGate)
 
 ```bash
 ping -c 4 10.10.0.100
 ```
 
-Expected output:
+Expected: 4 packets transmitted, 4 received, 0% packet loss.
 
-```
-PING 10.10.0.100 (10.10.0.100) 56(84) bytes of data.
-64 bytes from 10.10.0.100: icmp_seq=1 ttl=63 time=0.8 ms
-64 bytes from 10.10.0.100: icmp_seq=2 ttl=63 time=0.7 ms
-...
-4 packets transmitted, 4 received, 0% packet loss
-```
+### Step 2 — HTTP (requires a service listening on Host B)
 
-------
-
-### Step 2 — HTTP
-
-Install a simple web server on **Linux Host B**:
+If you have access to Linux Host B, start a simple web server there:
 
 ```bash
+# On Linux Host B
 python3 -m http.server 8080
 ```
 
-From **Linux Host A**, send an HTTP request:
+Then from Linux Host A:
 
 ```bash
 curl -v http://10.10.0.100:8080
 ```
 
-Expected output (truncated):
+### Step 3 — hping3 TCP probes
 
-```
-* Connected to 10.10.0.100 (10.10.0.100) port 8080
-> GET / HTTP/1.1
-> Host: 10.10.0.100:8080
-...
-< HTTP/1.0 200 OK
-```
-
-------
-
-### Step 3 — HTTPS
-
-Test HTTPS from Linux Host A to any HTTPS service reachable through FortiGate:
+`hping3` does not need a listening service on Host B — the FortiGate logs the SYN regardless. This is the most reliable manual flow when only Host A is available:
 
 ```bash
-curl -k -v https://10.10.0.100
-```
-
-------
-
-### Step 4 — SSH
-
-Test SSH from Linux Host A to Linux Host B:
-
-```bash
-ssh user@10.10.0.100
-```
-
-------
-
-### Step 5 — SCP
-
-Send a file via SCP to generate an additional traffic session:
-
-```bash
-dd if=/dev/urandom bs=1K count=512 | ssh user@10.10.0.100 "cat > /tmp/testfile.bin"
-```
-
-------
-
-### Step 6 — DNS (UDP 53)
-
-Generate DNS queries from Linux Host A:
-
-```bash
-for i in $(seq 1 10); do
-  dig @10.10.0.100 test$i.lab.internal +short
-done
-```
-
-> DNS traffic (UDP 53 and TCP 53) is one of the traffic types defined in the scenario. These queries exercise DNS-specific rules in the policy set.
-
-------
-
-## Task 3: Generate Application Traffic with hping3
-
-Use hping3 to generate TCP sessions with varied flags and ports, supplementing Scapy sessions with additional 5-tuple diversity:
-
-```bash
-# TCP SYN to port 443
-hping3 -S -p 443 -c 10 10.10.0.100
-
-# TCP SYN to port 8080
+hping3 -S -p 443  -c 10 10.10.0.100
 hping3 -S -p 8080 -c 10 10.10.0.100
-
-# TCP SYN to port 3306
-hping3 -S -p 3306 -c 5 10.10.0.100
+hping3 -S -p 3306 -c 5  10.10.0.100
 ```
 
 ------
 
-# Exercise 3: Verify Logging and Build Analytics in FortiAnalyzer
+# Exercise 3: Verify Hit Counts on FortiGate
 
-## Task 1: Confirm FortiGate → FortiAnalyzer Log Ingestion
+This exercise replaces the FortiAnalyzer log-ingestion check from earlier drafts. Hit counts are read straight from FortiGate's monitor API — the same endpoint `phase3_traditional` will use in Lab 3.
 
-1. Log in to **FortiAnalyzer** at `https://172.16.0.2`.
+## Task 1: Inspect Per-Policy Hit Counts
 
-2. Open: **Log View → Traffic Logs**
+On Linux Host A, query the FortiGate APIs for live hit counts **scoped to your lab rules only**. The script below first fetches the policy CMDB (so it can pick out IDs whose `comments` contain `LAB-TEST-2025`), then intersects with the monitor endpoint:
 
-   > 📸 *Screenshot: FAZ Traffic Logs*
+```bash
+cd ~/ruleTrafficGenerator
+source .venv/bin/activate
+python3 - <<'EOF'
+import yaml, requests, urllib3
+urllib3.disable_warnings()
+with open("config.yaml") as f:
+    cfg = yaml.safe_load(f)
+fgt = cfg["fortigate"]
+tag = "LAB-TEST-2025"
+auth = {"Authorization": f"Bearer {fgt['api_token']}"}
+qs = {"vdom": fgt["vdom"]}
 
-3. In the search/filter bar, filter by the lab tag:
+# 1. Lab policy IDs from CMDB
+cmdb = requests.get(
+    f"https://{fgt['host']}:{fgt['port']}/api/v2/cmdb/firewall/policy",
+    params=qs, headers=auth, verify=fgt["verify_ssl"], timeout=fgt["timeout"],
+).json().get("results", [])
+lab_ids = {p["policyid"] for p in cmdb if tag in (p.get("comments") or "")}
+print(f"Lab policies on FortiGate (tagged {tag}): {len(lab_ids)}")
 
-   ```
-   comment LIKE '%LAB-TEST-2025%'
-   ```
+# 2. Hit counts from monitor — keep only lab IDs
+mon = requests.get(
+    f"https://{fgt['host']}:{fgt['port']}/api/v2/monitor/firewall/policy",
+    params=qs, headers=auth, verify=fgt["verify_ssl"], timeout=fgt["timeout"],
+).json().get("results", [])
+lab_mon = [p for p in mon if p["policyid"] in lab_ids]
+hit  = [p for p in lab_mon if p.get("hit_count", 0) > 0]
+zero = [p for p in lab_mon if p.get("hit_count", 0) == 0]
+print(f"  With hits   : {len(hit)}")
+print(f"  Zero hits   : {len(zero)}")
+print("\nTop 5 lab policies by hit count:")
+for p in sorted(hit, key=lambda x: x.get("hit_count", 0), reverse=True)[:5]:
+    print(f"  policyid={p['policyid']:<5}  hits={p.get('hit_count'):<8}  bytes={p.get('bytes')}")
+EOF
+```
 
-4. Confirm that traffic sessions from Linux Host A → Linux Host B appear with:
-   - Correct source and destination IPs (including alias IPs)
-   - Correct policy IDs matching rules generated in Lab 2
-   - Timestamps and byte counts consistent with the traffic you generated
+Expected output (numbers depend on how long traffic has been running):
 
-   > 📸 *Screenshot: FAZ Log Details*
+```
+Lab policies on FortiGate (tagged LAB-TEST-2025): 100
+  With hits   : ~68
+  Zero hits   : ~32
 
-5. Note that **not all policy IDs appear** — 25–40% of rules are intentionally unmatched. This is expected behavior, not a misconfiguration.
+Top 5 lab policies by hit count:
+  policyid=12    hits=27       bytes=42158
+  ...
+```
+
+> **Why filter by tag?** The raw monitor endpoint returns *every* FortiGate policy — including pre-existing system rules — so without the CMDB intersection an unfiltered count would be inflated. Filtering by `LAB-TEST-2025` gives you exactly the 100 rules pushed in Exercise 1.
+
+## Task 2: Verify on the FortiGate GUI
+
+1. Log in to the FortiGate GUI at `https://192.168.1.4`.
+2. Go to **Policy & Objects → Firewall Policy**.
+3. Right-click any column header and enable the **Bytes** and **Sessions** columns.
+4. Filter by `comments` containing `LAB-TEST-2025`.
+5. Confirm that ~60–75 % of policies have non-zero session counts and the rest sit at zero. This matches the `traffic.match_ratio` configured in `config.yaml`.
+
+> **Why no FortiAnalyzer step?** Lab 3's `phase3_traditional` script reads `hit_count` from the same FortiGate monitor endpoint you queried above. FortiAnalyzer is not on the critical path. If you want to explore FAZ analytics anyway, see the optional FAZ appendix below.
 
 ------
 
-## Task 2: Confirm FortiManager Awareness of Traffic
-
-1. On **FortiManager**, go to: **Device Manager → Logs or Summary Widgets**
-
-   > 📸 *Screenshot: FMG Traffic Summary*
-
-2. Confirm that the device shows active traffic and that policy IDs are visible in the summary widgets.
+> **Next Steps:** Proceed to **Lab 3** to run the ground-truth and traditional CIDR detection scripts against the hit-count data collected here, then to **Lab 4** for AI-assisted analysis with OpenCode.
 
 ------
 
-# Exercise 4: Build a Policy Hit Count Dataset and Report
+# Appendix (Optional): FortiAnalyzer Analytics
 
-## Task 1: Create a Custom SQL Dataset in FortiAnalyzer
+> Skip this appendix unless you completed the FortiAnalyzer appendix in Lab 1 and want to demo FAZ log analytics. Nothing later in the workshop depends on it.
 
-1. Go to: **Analytics → Datasets → Create New**
+## A.1: Verify FortiGate → FortiAnalyzer Log Ingestion
 
-   > 📸 *Screenshot: Create Dataset*
+1. Log in to **FortiAnalyzer** at `https://172.16.0.5`.
+2. Open **Log View → Traffic Logs**.
+3. Filter by source subnet so you only see lab traffic:
 
-2. Enter the name: **Policy Hit Count — LAB-TEST-2025**
+   ```
+   srcip IN [192.168.1.100, 192.168.1.101, 192.168.1.102, 192.168.1.103, 192.168.1.104, 192.168.1.105, 192.168.1.106, 192.168.1.107, 192.168.1.108, 192.168.1.109, 192.168.1.110]
+   ```
 
-3. Enter the following SQL query:
+   > Traffic logs do not carry the policy `comments` field (only the `policyid`), so filtering on `LAB-TEST-2025` directly will return nothing. Easiest is to filter by source IP as above.
+
+4. Confirm sessions show the expected source/destination IPs, policy IDs, and byte counts.
+5. Note that **not all policy IDs appear** — 25–40 % of rules are intentionally unmatched.
+
+## A.2: Build a Policy Hit Count Dataset and Report
+
+1. Go to **Analytics → Datasets → Create New**, name it **Policy Hit Count — LAB-TEST-2025**, and enter:
 
    ```sql
    SELECT
@@ -266,68 +303,26 @@ hping3 -S -p 3306 -c 5 10.10.0.100
        count(*)          AS sessions,
        sum(sentbyte)     AS sent_bytes,
        sum(rcvdbyte)     AS rcvd_bytes
-   FROM $log-traffic
+   FROM $log
    WHERE logtype = 'traffic'
-     AND comment LIKE '%LAB-TEST-2025%'
+     AND srcip IN ('192.168.1.100','192.168.1.101','192.168.1.102','192.168.1.103',
+                   '192.168.1.104','192.168.1.105','192.168.1.106','192.168.1.107',
+                   '192.168.1.108','192.168.1.109','192.168.1.110')
    GROUP BY policyid
    ORDER BY sessions DESC
    ```
 
-   > This query aggregates all traffic log entries tagged with `LAB-TEST-2025` by policy ID, showing session counts and byte totals per rule. Policy IDs that do not appear in the results have zero hits.
+2. Save the dataset, then go to **Reports → Create New → Custom Report**, add the columns `policyid / sessions / sent_bytes / rcvd_bytes`, and run the report.
 
-4. Click **Save**.
+## A.3: Try the Natural Language Query (NLQ)
 
-------
-
-## Task 2: Build a Report Using the Dataset
-
-1. Go to: **Reports → Create New → Custom Report**
-
-   > 📸 *Screenshot: Create Custom Report*
-
-2. Add a chart with the following columns from the dataset:
-
-   - `policyid`
-   - `sessions`
-   - `sent_bytes`
-   - `rcvd_bytes`
-
-3. Run the report and wait for it to complete.
-
-   > 📸 *Screenshot: Policy Hit Count Report*
-
-4. Export the report as PDF or CSV for use in Lab 3 comparisons.
-
-------
-
-# Exercise 5: Test Natural Language Query (NLQ)
-
-## Task 1: Ask Questions Using Plain English
-
-1. On FortiAnalyzer, go to: **Analytics → Natural Language Query (NLQ)**
-
-   > 📸 *Screenshot: NLQ Interface*
-
-2. Try the following queries:
+1. Go to **Analytics → Natural Language Query (NLQ)**.
+2. Try prompts such as:
 
    ```
    Show the top firewall rules by session count.
-   ```
-
-   ```
    Which policies had no traffic in the last 30 minutes?
-   ```
-
-   ```
    Show me traffic volume by source IP for the last hour.
    ```
 
-   > 📸 *Screenshot: NLQ Example Query*
-
-3. For each query, review:
-   - The generated dataset or chart
-   - Whether the policy IDs returned match your expectations from the hit count report
-
-------
-
-> **Next Steps:** Proceed to **Lab 3** to use FortiManager Policy Check and FortiAI to identify unused, shadowed, and conflicting rules using the hit count data collected in this lab.
+3. Compare the NLQ output against the hit counts you collected from FortiGate in Exercise 3.

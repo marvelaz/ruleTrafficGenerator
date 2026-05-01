@@ -1,14 +1,14 @@
 """
 Phase 2 — Traffic Generation
-Generates low-volume, log-observable traffic between linux1 and linux2
+Generates low-volume, log-observable traffic between LinuxA and LinuxB
 in both directions using Scapy.
 
 Protocols: TCP (varied ports), ICMP, HTTP (layer 7), DNS
 Target: match 60-75% of configured rules (configurable via match_ratio)
 
 Requirements: root / CAP_NET_RAW on both hosts.
-Run on linux1 for inside→outside traffic.
-Run on linux2 for outside→inside traffic.
+Run on LinuxA for inside→outside traffic.
+Run on LinuxB for outside→inside traffic.
 
 Usage:
   sudo python3 phase2_traffic.py --config config.yaml --direction in2out
@@ -16,6 +16,7 @@ Usage:
   sudo python3 phase2_traffic.py --config config.yaml --direction both
 """
 
+import ipaddress
 import json
 import logging
 import random
@@ -77,12 +78,17 @@ class TrafficTargetSelector:
     """
     Loads the generated rules from phase1 and selects which rule-src/dst/svc
     combos to generate traffic for, targeting match_ratio of total rules.
+
+    Uses round-robin cycling through the target set (shuffled each full pass)
+    so every target rule gets at least one hit before any rule gets a second hit.
+    Pure-random selection would leave some target rules at zero hits by chance.
     """
 
     def __init__(self, rules_file: str, match_ratio: float):
         self.match_ratio = match_ratio
         self.targets = []       # rules to match (traffic will be generated)
         self.skipped = []       # rules intentionally skipped (unused rule candidates)
+        self._cycle: list[dict] = []   # current shuffled pass through targets
 
         if Path(rules_file).exists():
             with open(rules_file) as f:
@@ -90,17 +96,23 @@ class TrafficTargetSelector:
             policies = data.get("policies", [])
             random.shuffle(policies)
             n_match = int(len(policies) * match_ratio)
-            self.targets  = policies[:n_match]
-            self.skipped  = policies[n_match:]
+            self.targets = policies[:n_match]
+            self.skipped = policies[n_match:]
             log.info(f"Loaded {len(policies)} rules — targeting {n_match} ({match_ratio*100:.0f}%)")
         else:
             log.warning(f"Rules file not found: {rules_file}. Using fallback random targets.")
 
-    def get_random_target(self) -> Optional[dict]:
-        """Return a random policy from the match set."""
+    def get_next_target(self) -> Optional[dict]:
+        """
+        Return the next policy in a round-robin cycle over the target set.
+        When all targets have been served once, reshuffle and start a new pass.
+        """
         if not self.targets:
             return None
-        return random.choice(self.targets)
+        if not self._cycle:
+            self._cycle = self.targets.copy()
+            random.shuffle(self._cycle)
+        return self._cycle.pop()
 
 
 # ---------------------------------------------------------------------------
@@ -186,28 +198,65 @@ def _send_http_request(src_ip: str, dst_ip: str, port: int, iface: str):
 # Session dispatcher
 # ---------------------------------------------------------------------------
 
+# Keys must match the service names used in phase1_rule_gen.py SERVICES list exactly.
 SERVICE_PORT_MAP = {
-    "HTTP":      ("tcp",  80),
-    "HTTPS":     ("tcp",  443),
-    "SSH":       ("tcp",  22),
-    "DNS-UDP":   ("dns",  53),
-    "DNS-TCP":   ("tcp",  53),
-    "SMTP":      ("tcp",  25),
-    "MYSQL":     ("tcp",  3306),
-    "RDP":       ("tcp",  3389),
-    "HTTP-ALT":  ("tcp",  8080),
-    "HTTPS-ALT": ("tcp",  8443),
-    "FTP":       ("tcp",  21),
-    "NTP":       ("udp_skip", 123),  # skip — NTP responses complex
-    "SNMP":      ("udp_skip", 161),
-    "ICMP":      ("icmp", 0),
-    "LDAP":      ("tcp",  389),
-    "LDAPS":     ("tcp",  636),
-    "MSSQL":     ("tcp",  1433),
-    "ORACLE":    ("tcp",  1521),
-    "REDIS":     ("tcp",  6379),
-    "MONGO":     ("tcp",  27017),
+    "HTTP":     ("tcp",      80),
+    "HTTPS":    ("tcp",      443),
+    "SSH":      ("tcp",      22),
+    "DNS":      ("dns",      53),    # phase1 uses "DNS" (UDP 53)
+    "SMTP":     ("tcp",      25),
+    "MYSQL":    ("tcp",      3306),
+    "RDP":      ("tcp",      3389),
+    "FTP":      ("tcp",      21),
+    "NTP":      ("udp_skip", 123),   # complex — skip generation
+    "SNMP":     ("udp_skip", 161),   # complex — skip generation
+    "PING":     ("icmp",     0),     # phase1 uses "PING" not "ICMP"
+    "LDAP":     ("tcp",      389),
+    "MS-SQL":   ("tcp",      1433),  # phase1 uses "MS-SQL" not "MSSQL"
+    "IMAP":     ("tcp",      143),
+    "POP3":     ("tcp",      110),
+    "TELNET":   ("tcp",      23),
+    "KERBEROS": ("tcp",      88),
+    "NFS":      ("tcp",      2049),
+    "RADIUS":   ("udp_skip", 1812),  # complex — skip generation
+    "SYSLOG":   ("udp_skip", 514),   # complex — skip generation
 }
+
+
+def _addr_name_to_cidr(addr_name: str) -> Optional[str]:
+    """
+    Parse a LAB address object name back to its CIDR.
+    LAB-NET-192-168-1-0_24  → 192.168.1.0/24
+    LAB-SUB-192-168-1-176_28 → 192.168.1.176/28
+    LAB-HOST-192-168-1-10   → 192.168.1.10/32
+    Returns None if the name doesn't match any known pattern.
+    """
+    for prefix in ("LAB-NET-", "LAB-SUB-", "LAB-HOST-"):
+        if addr_name.startswith(prefix):
+            rest = addr_name[len(prefix):]
+            if "_" in rest:
+                ip_part, prefix_len = rest.rsplit("_", 1)
+                return f"{ip_part.replace('-', '.')}/{prefix_len}"
+            else:
+                return f"{rest.replace('-', '.')}/32"
+    return None
+
+
+def _pick_ip_for_addr(addr_name: str, available_ips: list[str]) -> str:
+    """
+    Return an IP from available_ips that falls inside the address object's subnet.
+    Falls back to a random available IP if no match (e.g. unknown address format).
+    """
+    cidr = _addr_name_to_cidr(addr_name)
+    if cidr:
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            matching = [ip for ip in available_ips if ipaddress.ip_address(ip) in net]
+            if matching:
+                return random.choice(matching)
+        except ValueError:
+            pass
+    return random.choice(available_ips)
 
 
 def dispatch_session(
@@ -219,16 +268,19 @@ def dispatch_session(
 ) -> dict:
     """
     Generate traffic for one policy entry.
+    Picks src/dst IPs that actually fall within the policy's address objects
+    so the FortiGate hit counter increments on the correct rule.
     Returns a session record for statistics.
     """
-    src_ip = random.choice(src_ips)
-    dst_ip = random.choice(dst_ips)
+    src_addr_name = (policy.get("srcaddr") or [{}])[0].get("name", "")
+    dst_addr_name = (policy.get("dstaddr") or [{}])[0].get("name", "")
+    src_ip = _pick_ip_for_addr(src_addr_name, src_ips)
+    dst_ip = _pick_ip_for_addr(dst_addr_name, dst_ips)
 
     # Determine service from policy
     services = policy.get("service", [{}])
     svc_name = services[0].get("name", "HTTP") if services else "HTTP"
-    # Strip LAB-SVC- prefix if present
-    svc_key = svc_name.replace("LAB-SVC-", "")
+    svc_key = svc_name  # names now match SERVICE_PORT_MAP keys directly
 
     proto_info = SERVICE_PORT_MAP.get(svc_key, ("tcp", 80))
     proto, port = proto_info
@@ -329,6 +381,27 @@ def run(config_path: str, direction: str = "in2out", max_sessions: int = 0):
     delay_pkt  = traffic_cfg.get("inter_packet_delay", 0.5)
     delay_sess = traffic_cfg.get("inter_session_delay", 1.0)
 
+    # Detect which side this host is on by checking local interfaces.
+    # All generated rules are inside→outside, so out2in traffic won't match
+    # any rule and requires LinuxB. Warn and skip out2in if running on LinuxA.
+    import subprocess
+    _local_addrs = subprocess.run(["ip", "addr"], capture_output=True, text=True).stdout
+    on_inside  = net_cfg["inside"]["primary_ip"]  in _local_addrs
+    on_outside = net_cfg["outside"]["primary_ip"] in _local_addrs
+
+    if direction == "out2in" and on_inside and not on_outside:
+        console.print(
+            "[bold red]ERROR: --direction out2in requires LinuxB (outside host).\n"
+            "All generated rules are inside→outside. Run --direction in2out from LinuxA."
+        )
+        return
+    if direction == "both" and on_inside and not on_outside:
+        console.print(
+            "[yellow]WARNING: Running on LinuxA (inside host). "
+            "'both' reduced to 'in2out' — no out2in rules exist to match.\n"
+        )
+        direction = "in2out"
+
     console.rule("[bold cyan]Phase 2 — Traffic Generation")
     console.print(f"Direction   : [bold]{direction}[/bold]")
     console.print(f"Inside IPs  : {inside_ips}")
@@ -345,7 +418,7 @@ def run(config_path: str, direction: str = "in2out", max_sessions: int = 0):
             if max_sessions > 0 and session_count >= max_sessions:
                 break
 
-            policy = selector.get_random_target()
+            policy = selector.get_next_target()
             if policy is None:
                 # No rule file — synthesize a random target
                 policy = {

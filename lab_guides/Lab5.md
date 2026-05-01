@@ -1,203 +1,208 @@
-# Lab 5: Multi-Device Policy Consolidation with Policy Blocks and Metadata Variables
+# Lab 5: Phase 4 — Lab Cleanup
 
-In this lab, you will learn how to create shared security policies that work across many FortiGate firewalls. You will use Policy Blocks to build reusable rule sets and metadata variables to make device-specific settings easy to manage.
+**Estimated Time:** 15–20 minutes
 
-You will also use FortiAI to help create scripts and objects that can later be added into Policy Blocks.
+## Goal
 
-By the end of this lab, you will be able to standardize firewall policies across multiple devices with much less manual work.
+Remove all lab-generated firewall policies and address objects from FortiGate, and remove the IP aliases from Linux Host A. This restores everything to its pre-lab state without affecting any pre-existing rules.
 
-------
+> **(Optional — FAZ)** If you completed the FortiAnalyzer appendix in Lab 1, an additional exercise at the end of this lab cleans up the lab log entries from FAZ. Skip it if you did not deploy FortiAnalyzer.
 
-## Objectives
+## Design Guarantee
 
-- Learn how to add multiple FortiGate devices into FortiManager and prepare them for shared policies.
-- Build reusable Policy Blocks and apply metadata variables to customize settings per device.
-- Use FortiAI to create starter scripts and objects for faster policy building.
+Every object created by the lab tool — policies, address objects, and log entries — is tagged `LAB-TEST-2025`. Cleanup operations are strictly scoped to this tag. **Pre-existing rules and logs are never touched.**
 
 ------
 
-## Time to Complete
+# Exercise 1: Verify What Will Be Deleted
 
-**Estimated:** 70–75 minutes
+Before running cleanup, confirm what is currently on FortiGate.
 
-------
+## Task 1: Count Lab Policies on FortiGate
 
-## Exercise 1: Adding Extra FortiGate Devices into FortiManager
+```bash
+cd ~/ruleTrafficGenerator
+source .venv/bin/activate
+python3 - <<'EOF'
+import yaml, requests, urllib3
+urllib3.disable_warnings()
+with open("config.yaml") as f:
+    cfg = yaml.safe_load(f)
+fgt = cfg["fortigate"]
+r = requests.get(
+    f"https://{fgt['host']}:{fgt['port']}/api/v2/cmdb/firewall/policy",
+    params={"vdom": fgt["vdom"]},
+    headers={"Authorization": f"Bearer {fgt['api_token']}"},
+    verify=fgt["verify_ssl"], timeout=fgt["timeout"]
+)
+lab_rules = [p for p in r.json().get("results", []) if "LAB-TEST-2025" in p.get("comments", "")]
+print(f"LAB-TEST-2025 policies on FortiGate: {len(lab_rules)}")
+for p in lab_rules[:5]:
+    print(f"  policyid={p['policyid']}  name={p['name']}")
+if len(lab_rules) > 5:
+    print(f"  ... and {len(lab_rules) - 5} more")
+EOF
+```
 
-### Task 1 — Add 1–2 FortiGate VMs
+Expected output:
 
-1. Log in to FortiManager using your lab credentials.
-
-   > 📸 *Screenshot: FortiManager Login*
-
-2. In the left menu, click **Device Manager**.
-
-   > 📸 *Screenshot: Device Manager*
-
-3. Click **Add Device** → **Add Model Device** or **Add via IP**, depending on your lab.
-
-   > 📸 *Screenshot: Add Device*
-
-4. Enter the device information for the additional FortiGates.
-
-5. When the devices appear, verify they are inside the same ADOM or correct ADOM version.
-
-   > 📸 *Screenshot: ADOM Assignment*
-
-6. Confirm that all devices show a green, healthy connection.
-
-------
-
-## Exercise 2: Creating Reusable Policy Blocks
-
-### Task 1 — Build Standard Policy Blocks
-
-1. Go to **Policy & Objects** → **Policy Blocks**.
-
-   > 📸 *Screenshot: Policy Blocks Menu*
-
-2. Click **Create New Policy Block**.
-
-3. Create the following example blocks:
-
-   - Standard Outbound Internet
-   - Inbound VIP + NAT
-   - East-West Micro-Segmentation
-
-4. For each block:
-
-   - Add firewall rules
-   - Assign standard service and address objects
-   - Give each block a clear description
-
-   > 📸 *Screenshot: Creating Policy Block*
-
-5. Save the blocks.
-
-### Task 2 — Add Policy Blocks to Policy Packages
-
-1. Open the policy package for one of your FortiGates.
-
-2. Click **Insert Policy Block**.
-
-   > 📸 *Screenshot: Add Policy Block*
-
-3. Choose one of the blocks you created.
-
-4. Insert it into the correct part of the policy list.
-
-5. Repeat for the other blocks as needed.
+```
+LAB-TEST-2025 policies on FortiGate: 100
+  policyid=4   name=CORP-INET-WEB-0042
+  policyid=5   name=MGMT-WAN-PING-0007
+  policyid=6   name=CORP-WAN-RDP-0022
+  policyid=7   name=CORP-INET-SQL-0025
+  policyid=8   name=MGMT-INET-DNS-0059
+  ... and 95 more
+```
 
 ------
 
-## Exercise 3: Creating Metadata Variables and Mapping Them to Devices
+# Exercise 2: Delete Lab Policies from FortiGate
 
-### Task 1 — Create Metadata Variables
+## Task 1: Delete All LAB-TEST-2025 Policies
 
-1. In the left menu, select **Policy & Objects** → **Metadata Variables**.
+```bash
+python3 main.py rules --delete
+```
 
-   > 📸 *Screenshot: Metadata Variables Menu*
+Expected output:
 
-2. Click **Create New Variable**.
+```
+Deleting all lab rules from FortiGate...
+Deleted 100 LAB-TEST-2025 policies from FortiGate.
+```
 
-3. Create variables such as:
+## Task 2: Verify Deletion on FortiGate
 
-   - `site_id`
-   - `wan_ip`
-   - `mgmt_subnet`
-
-   > 📸 *Screenshot: Create Variable*
-
-4. Save your changes.
-
-### Task 2 — Map Variables per Device
-
-1. Click **Per-Device Mapping** inside the Metadata Variables menu.
-
-   > 📸 *Screenshot: Per Device Mapping*
-
-2. Select one variable (for example: `wan_ip`).
-
-3. Enter a unique value for each FortiGate device.
-
-4. Repeat for the other variables.
-
-5. **Optional:** Import mappings using CSV/JSON.
-
-   > 📸 *Screenshot: Import Mappings*
+1. Log in to FortiGate GUI at `https://192.168.1.4`.
+2. Go to **Policy & Objects → Firewall Policy**.
+3. Search for `LAB-TEST-2025` in the comments filter.
+4. Confirm the list is empty.
 
 ------
 
-## Exercise 4: Using FortiAI to Create Objects and Scripts
+# Exercise 3: Full Reset (Alternative)
 
-### Task 1 — Generate Starter Objects with FortiAI
+If you want to delete the lab rules — and, if FAZ was set up, the lab logs — in a single command, for example before repeating the lab from scratch:
 
-1. Click the **FortiAI** icon at the top of the screen.
+```bash
+python3 main.py reset --force
+```
 
-   > 📸 *Screenshot: FortiAI Icon*
+Expected output (FortiGate-only path):
 
-2. Type a prompt such as:
+```
+──────────────── FULL RESET ────────────────
+Deleting all lab rules from FortiGate...
+Deleted 100 LAB-TEST-2025 policies.
+FortiAnalyzer cleanup skipped (no `fortianalyzer` block in config.yaml).
+Reset complete.
+```
 
-   > *"Create address objects for standard internal networks and suggest names."*
-
-3. Review the suggested objects.
-
-   > 📸 *Screenshot: AI Object Suggestions*
-
-4. Next prompt:
-
-   > *"Create VIP templates and IP pools using metadata variables."*
-
-5. Copy or save the generated script for use in Policy Blocks.
+> If you completed the FortiAnalyzer appendix, the reset will also delete the matching FAZ log entries.
 
 ------
 
-## Exercise 5: Installing to Multiple FortiGates and Validating
+# Exercise 4: Remove IP Aliases from Linux Host A
 
-### Task 1 — Install Policies
+The IP aliases added in Lab 2 persist until the host is rebooted or manually removed. Remove them now:
 
-1. Open the policy package containing your Policy Blocks.
+```bash
+source .venv/bin/activate
+sudo $(which python3) main.py traffic --remove-aliases
+```
 
-2. Click **Install Wizard**.
+> Use `sudo $(which python3)` so the venv's interpreter is invoked. `sudo python3` would fall back to the system Python and fail with `ModuleNotFoundError: No module named 'rich'`.
 
-   > 📸 *Screenshot: Install Wizard*
+Expected output:
 
-3. Select multiple FortiGate targets.
+```
+Removed alias 192.168.1.101 from eth0
+Removed alias 192.168.1.102 from eth0
+...
+Removed alias 192.168.1.110 from eth0
+Aliases removed successfully.
+```
 
-4. Run **Install Preview** to confirm the metadata variables were replaced correctly.
+Verify:
 
-5. Click **Install** to apply the changes.
+```bash
+ip addr show eth0
+```
 
-   > 📸 *Screenshot: Install to Multiple Devices*
-
-### Task 2 — Validate Success
-
-1. Log in to **FortiAnalyzer**.
-
-2. Run a **Policy Hit Count Report** to confirm rules are active.
-
-   > 📸 *Screenshot: FAZ Reports*
-
-3. Confirm that:
-
-   - Policies were installed without errors
-   - Variables were replaced with the correct values
-   - Each firewall received the right Policy Blocks
+Confirm only `192.168.1.100/24` remains on `eth0`.
 
 ------
 
-## Exercise 6: Exporting Templates and Scripts
+# Exercise 5: Post-Lab Verification Checklist
 
-### Task 1 — Export for Reuse
+```
+[ ] FortiGate: no LAB-TEST-2025 policies visible in Policy & Objects
+[ ] Linux Host A: no alias IPs on eth0 (only 192.168.1.100 remains)
+[ ] lab_output/ directory can be archived or deleted as needed
+[ ] lab.log file reviewed for any errors during the lab run
+[ ] (Optional — FAZ only) FortiAnalyzer: no LAB-TEST-2025 log entries in Traffic Logs
+```
 
-1. In FortiManager, open **System Settings** → **Export**.
+------
 
-   > 📸 *Screenshot: Export Menu*
+# Appendix (Optional): Clean Up FortiAnalyzer Logs
 
-2. Export:
+> Only run this if you completed the FortiAnalyzer appendix in Lab 1 and have a `fortianalyzer:` block in `config.yaml`. If FAZ was never deployed, skip this section — `python3 main.py cleanup` and `python3 main.py reset` will detect the missing block and skip the FAZ branch automatically.
 
-   - Policy Blocks
-   - Metadata variable mappings
-   - AI-generated scripts
+## Task 1: Run Log Cleanup
 
-3. Save these as your "take-home" templates.
+```bash
+python3 main.py cleanup
+```
+
+You will be prompted to confirm:
+
+```
+This will delete all FortiAnalyzer log entries tagged LAB-TEST-2025.
+Pre-existing logs will not be affected.
+Confirm? [y/N]: y
+```
+
+Type `y` and press Enter. To skip the prompt in automated runs:
+
+```bash
+python3 main.py cleanup --force
+```
+
+## Task 2: Verify Log Cleanup on FortiAnalyzer
+
+1. Log in to FortiAnalyzer at `https://172.16.0.5`.
+2. Go to **Log View → Traffic Logs**.
+3. Filter by source IP `IN [192.168.1.100, 192.168.1.101 … 192.168.1.110]`.
+4. Confirm no entries appear.
+
+------
+
+# Appendix (Optional): Re-Running the Lab from Scratch
+
+To run the full lab again from scratch on a clean environment:
+
+```bash
+# Confirm clean state
+python3 main.py rules --delete     # in case any rules remain
+python3 main.py cleanup --force    # in case any FAZ logs remain (no-op if FAZ is not configured)
+
+# Run all phases in sequence
+source .venv/bin/activate
+python3 main.py rules --count 100
+sudo $(which python3) main.py traffic --setup-aliases
+sudo $(which python3) main.py traffic --direction in2out --sessions 300
+python3 main.py analyze
+```
+
+Or use the combined command:
+
+```bash
+sudo $(which python3) main.py all --count 100 --sessions 300 --wait 60
+```
+
+------
+
+> **Lab Complete.** You have successfully generated, analyzed, and cleaned up a synthetic firewall policy set using the FortiGate Rule Optimization Lab tool. This is the end of the active workshop path (Labs 1–5). Labs 6 and 7 (Script Assistant and Policy Blocks) are deferred extensions — ask your instructor whether they are in scope for your session.

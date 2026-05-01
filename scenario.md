@@ -4,12 +4,12 @@
 
 | Component       | Role                          | IP                                        |
 |-----------------|-------------------------------|-------------------------------------------|
-| linux1          | Inside host / traffic source  | `192.168.1.100` (primary) + aliases       |
-| linux2          | Outside host / traffic source | `10.10.0.100` (primary) + aliases         |
+| LinuxA          | Inside host / traffic source  | `192.168.1.100` (primary) + aliases       |
+| LinuxB          | Outside host / traffic source | `10.10.0.100` (primary) + aliases         |
 | FortiGate       | Firewall under test           | TBD via config file                       |
 | FortiAnalyzer   | Log aggregation + analysis    | TBD via config file                       |
 
-Linux1 and linux2 will each have virtual IP aliases added to their interfaces (e.g., `192.168.1.101–110`, `10.10.0.101–110`) to simulate multiple hosts and make rules and traffic patterns appear realistic rather than a single-host test.
+Linux1 and LinuxB will each have virtual IP aliases added to their interfaces (e.g., `192.168.1.101–110`, `10.10.0.101–110`) to simulate multiple hosts and make rules and traffic patterns appear realistic rather than a single-host test.
 
 ---
 
@@ -43,8 +43,8 @@ Approximately **30–40%** of rules will be clean/non-overlapping (to make the o
 
 Traffic is generated from both directions. The goal is **low-volume, log-observable traffic** — not load testing.
 
-- `linux1 → linux2` (inside to outside)
-- `linux2 → linux1` (outside to inside)
+- `LinuxA → LinuxB` (inside to outside)
+- `LinuxB → LinuxA` (outside to inside)
 
 **Tools:** Scapy (primary, Python-native) + hping3 (supplementary for TCP flag variation).
 

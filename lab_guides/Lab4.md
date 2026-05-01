@@ -1,177 +1,448 @@
-# Lab 4: Natural Language to Config — Using Script Assistant with Staging, Diff, and Rollback
+# Lab 4: AI-Assisted Policy Analysis with OpenCode + OpenRouter
 
-In this lab, you will learn how to use natural language (simple English commands) to create firewall cleanup scripts using FortiAI's Script Assistant. You will run these scripts safely inside a staging ADOM or a cloned policy package. Then you will preview the changes, install them on a test FortiGate, check the results in FortiAnalyzer, and practice rolling back if something goes wrong.
+**Estimated Time:** 90–100 minutes
 
-This lab teaches you how real administrators use AI to make policy changes faster and safer.
+## Goal
 
-------
+Use OpenCode (a terminal AI agent) connected to OpenRouter (a unified model API) to perform interactive analysis of the JSON reports generated in Lab 3. OpenCode can read the report files directly, reason across the full policy set, and generate actionable remediation steps — closing the detection gaps that the traditional CIDR script missed.
 
-## Objectives
+## Why OpenCode + OpenRouter
 
-- Create firewall cleanup scripts using plain English commands with FortiAI Script Assistant.
-- Test changes safely using a staging ADOM, Install Preview, and configuration diff tools.
-- Validate results and use rollback features if changes need to be undone.
+| Capability | Traditional Script | OpenCode + OpenRouter |
+|------------|-------------------|----------------------|
+| Detect positional shadow pairs | Partial (~50%) | Full (reasons across all pairs) |
+| Detect subnet overlaps | Partial (~50%) | Full |
+| Generate API remediation payloads | No | Yes |
+| Ask follow-up questions | No | Yes |
+| Swap models without code changes | N/A | Yes (200+ models via OpenRouter) |
 
-------
+## Using `@` to Include Files
 
-## Time to Complete
+OpenCode uses `@<filepath>` to attach file contents directly into the prompt context. This is more reliable than asking the model to "read" a file — the content is injected before the model processes your request.
 
-**Estimated:** 70–75 minutes
+```
+@lab_output/zero_report.json compare the counts with @lab_output/traditional_report.json
+```
 
-------
+All prompts in this lab use `@` notation. Use them exactly as shown.
 
-## Exercise 1: Using Script Assistant to Generate Cleanup Scripts
+## Prerequisites
 
-### Task 1 — Open FortiAI and Ask for Script Creation
-
-1. Log in to FortiManager with your lab credentials.
-
-   > 📸 *Screenshot: FortiManager Login*
-
-2. Click the **FortiAI** icon in the top bar.
-
-   > 📸 *Screenshot: FortiAI Icon*
-
-3. In the prompt box, type the following command:
-
-   ```
-   Identify policies with 0 hits in 30 days; disable them and tag as 'candidate remove'.
-   ```
-
-4. Wait for FortiAI to generate a cleanup script.
-
-   > 📸 *Screenshot: Script Assistant Result*
-
-5. Next, type the second command:
-
-   ```
-   Merge duplicate address objects with identical CIDRs; update references.
-   ```
-
-6. Review the generated script and verify:
-
-   - Policies with zero hits are disabled
-   - Tags are correctly added
-   - Address objects are merged and references updated
-
-7. Save or copy the script for use in the next exercise.
+- Lab 3 completed: `lab_output/zero_report.json` and `lab_output/traditional_report.json` exist on Linux Host A
+- **OpenCode runs on Linux Host A** (same host as the lab repo and the JSON reports). Internet access from LinuxA to OpenRouter is required.
 
 ------
 
-## Exercise 2: Running the Script in a Staging ADOM or Clone
+# Exercise 1: Install and Configure OpenCode
 
-### Task 1 — Prepare a Safe Workspace
+## Task 1: Install OpenCode
 
-1. In the left menu, go to **Administration → ADOMs**.
+> **Run all OpenCode steps in this lab on Linux Host A** — the same VM that already has the `ruleTrafficGenerator` repo, the `.venv`, and `lab_output/zero_report.json` + `lab_output/traditional_report.json` from Lab 3. OpenCode needs local read access to those JSON files (the `@<filepath>` syntax injects file contents from the working directory), so installing it on a different machine would mean copying the reports across — avoid that.
 
-   > 📸 *Screenshot: ADOM List*
+SSH into Linux Host A and install OpenCode:
 
-2. If your lab requires a **staging ADOM**:
+```bash
+ssh user@192.168.1.100      # from your workstation, if not already on LinuxA
+curl -fsSL https://opencode.ai/install.sh | bash
+```
 
-   - Select the Staging ADOM
-   - Open the policy package inside it
+The installer drops the `opencode` binary into `~/.local/bin` (or `/usr/local/bin` if run as root). If the binary is not on `$PATH` after install, add it:
 
-3. If your lab uses a **cloned policy package**:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-   - In **Policy & Objects**, right-click the original policy package
-   - Click **Clone**
-   - Name it `lab4-staging`
+**Verify installation:**
 
-   > 📸 *Screenshot: Clone Policy Package*
+```bash
+opencode --version
+```
 
-### Task 2 — Run the Script
-
-1. Open the staging policy package.
-
-2. Click **Scripts → Create New**.
-
-   > 📸 *Screenshot: Script Window*
-
-3. Paste the Script Assistant output into the script editor.
-
-4. Click **Run Script** (on the staging ADOM only).
-
-5. Wait for the confirmation message.
-
-   > 📸 *Screenshot: Script Execution*
+> **Workstation install (only if you cannot run on LinuxA):** OpenCode also installs on macOS via `brew install sst/tap/opencode`. If you go this route, you must `scp` `lab_output/zero_report.json` and `lab_output/traditional_report.json` from LinuxA to your workstation before each session — they are what every prompt below references with `@`.
 
 ------
 
-## Exercise 3: Using Install Preview and Diff Tools
+## Task 2: Create an OpenRouter Account and API Key
 
-### Task 1 — Preview the Changes
-
-1. In the policy package toolbar, click **Install Wizard**.
-
-   > 📸 *Screenshot: Install Wizard*
-
-2. Select the test FortiGate as the target device.
-
-3. Before installing, click **Install Preview**.
-
-4. Review the differences:
-
-   - Disabled rules
-   - Tags added
-   - Address objects merged
-
-   > 📸 *Screenshot: Config Diff*
-
-5. Confirm that only the expected changes appear.
-
-### Task 2 — Install the Policy
-
-1. If everything looks correct, click **Install**.
-
-2. Wait for the job to finish inside **Task Monitor**.
-
-   > 📸 *Screenshot: Task Monitor*
+1. Go to [openrouter.ai](https://openrouter.ai) and create an account.
+2. Navigate to **Keys → Create Key**.
+3. Name it `lab-key` and copy the generated key (starts with `sk-or-...`).
+4. Free-tier models require no credits. Paid models need a balance — $5 is sufficient for multiple full lab runs.
 
 ------
 
-## Exercise 4: Validate the Results Using FortiAnalyzer
+## Task 3: Configure OpenCode with OpenRouter
 
-### Task 1 — Compare Before and After Behavior
+OpenCode uses a config file to set the provider and model. Run the initial setup:
 
-1. Log in to **FortiAnalyzer**.
+```bash
+opencode
+```
 
-2. Go to **Reports → FortiGate Reports**.
+On first launch, OpenCode opens an interactive setup. When prompted:
 
-   > 📸 *Screenshot: FAZ Reports*
+- **Provider:** select `OpenRouter`
+- **API Key:** paste your `sk-or-...` key
+- **Model:** enter `minimax/minimax-m2.5:free` — this is **MiniMax M2.5** on its free tier (see note below)
 
-3. Run the following:
+To set the model manually after setup:
 
-   - Policy Hit Count Report (Before)
-   - Policy Hit Count Report (After)
+```bash
+opencode --model minimax/minimax-m2.5:free
+```
 
-4. Compare:
-
-   - Previously unused rules should now be disabled
-   - Address objects should appear merged
-   - No new errors should appear
-
-5. Document any differences you see.
+> **Preferred model for this lab:** **MiniMax M2.5** on its free tier — OpenRouter ID `minimax/minimax-m2.5:free`. This is a current-generation reasoning model that handles the structured JSON analysis in Exercises 2–6 well and costs nothing to run. The paid variant (`minimax/minimax-m2.5`) is identical except for higher rate limits — switch only if you hit free-tier throttling.
+>
+> Other options:
+> | Model | OpenRouter ID | Cost |
+> |-------|--------------|------|
+> | **MiniMax M2.5** *(recommended)* | `minimax/minimax-m2.5:free` | Free |
+> | MiniMax M2.5 (paid tier) | `minimax/minimax-m2.5` | $0.15 / $1.15 per M input/output tokens |
+> | MiniMax M2.7 (newer) | `minimax/minimax-m2.7` | $0.30 / $1.20 per M tokens |
+> | Claude 3.5 Sonnet | `anthropic/claude-3-5-sonnet` | Paid |
+> | GPT-4o | `openai/gpt-4o` | Paid |
+>
+> Pricing and free-tier availability change frequently — if `:free` is rate-limited or unavailable, fall back to the paid `minimax/minimax-m2.5` ID. Exercise 7 will repeat all analyses with a second model so you can compare outputs.
 
 ------
 
-## Exercise 5: Rollback Using FortiManager Versioning
+## Task 4: Verify OpenCode Can Read Files
 
-### Task 1 — Practice Rollback
+Navigate to the project folder and start a session:
 
-1. In FortiManager, go to the **Revision History** or **Versioning** panel for the policy package.
+```bash
+cd ~/ruleTrafficGenerator
+opencode --model minimax/minimax-m2.5:free
+```
 
-   > 📸 *Screenshot: Revision History*
+In the OpenCode session, test file access with `@`:
 
-2. Click **Compare** to view the diff between:
+```
+@lab_output/zero_report.json How many total rules are in this report and how many are clean?
+```
 
-   - Version before script
-   - Version after script
+Expected response: OpenCode reads the file and reports `metadata.total_pushed` and the count from `counts.clean`.
 
-3. If you need to revert:
+------
 
-   - Select the previous version
-   - Click **Restore**
+# Exercise 2: Analysis 1 — Detection Accuracy Scorecard
 
-   > 📸 *Screenshot: Rollback*
+## Task 1: Run the Accuracy Comparison
 
-4. Run an **Install Preview** again to confirm changes were undone.
+Start a new OpenCode session from the project root:
+
+```bash
+cd ~/ruleTrafficGenerator
+opencode --model minimax/minimax-m2.5:free
+```
+
+Paste the following prompt:
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+Using these two reports:
+- zero_report.json is the ground truth (actual counts per issue type)
+- traditional_report.json is what the CIDR detection script found
+
+For each issue type (shadow, duplicate, subnet_overlap, svc_overlap):
+1. Get the actual count from zero_report.json.
+2. Get the detected count from traditional_report.json.
+3. Calculate recall = detected / actual as a percentage.
+4. Identify which types had the worst recall and explain why the CIDR
+   detection algorithm misses them.
+5. Present results as a table: Type | Actual | Detected | Recall %
+```
+
+**Expected output:** A table showing duplicates and collapsible service groups near 100% recall, while shadow and subnet-overlap rows show ~50% — caused by the positional blind spot when rules are shuffled.
+
+**Record your results (Model 1: MiniMax M2.5 — `minimax/minimax-m2.5:free`):**
+
+| Issue Type | Actual | Detected | Recall % |
+|------------|--------|----------|----------|
+| Shadow pairs | | | |
+| Duplicates | | | |
+| Subnet overlaps | | | |
+| Collapsible svc | | | |
+
+------
+
+# Exercise 3: Analysis 2 — Remediation Plan
+
+## Task 1: Generate Actionable Cleanup Steps
+
+In the same or a new session:
+
+```
+@lab_output/traditional_report.json
+
+Using the flagged_policies index in this report, produce a step-by-step
+remediation plan ordered as follows: duplicates first, then shadow rules,
+then subnet overlaps, then collapsible service group merges.
+
+For each category:
+
+DUPLICATES — keep the policy with the lowest policyid per group. List the
+policyids to DELETE using:
+  DELETE /api/v2/cmdb/firewall/policy/<policyid>?vdom=root
+
+SHADOW RULES — the specific (narrow) rule is unreachable. List its policyid
+to DELETE.
+
+SUBNET OVERLAPS — the narrow rule is redundant. List its policyid to DELETE.
+
+COLLAPSIBLE SERVICE GROUPS — for each group sharing the same srcaddr and
+dstaddr, write a single merged FortiGate policy JSON payload that replaces
+all rules in the group with one rule using a combined service list. Include
+DELETE calls for the original rules.
+```
+
+**Expected output:** A numbered delete list + merged policy JSON payloads ready to execute against the FortiGate REST API.
+
+------
+
+# Exercise 4: Analysis 3 — Blind Spot Explanation
+
+## Task 1: Understand Why the Traditional Script Missed Rules
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+The traditional detection script uses position-dependent CIDR containment:
+a broad rule must appear before a narrow rule in FortiGate's sequence for
+the shadow/subnet-overlap to be detected. Phase 1 shuffled policies before
+pushing, so ~50% of pairs have reversed order and are invisible to the script.
+
+Using both reports:
+1. Calculate how many shadow pairs were missed (zero count minus traditional count).
+2. Calculate how many subnet-overlap pairs were missed.
+3. Explain in plain English why positional detection fails when rules are shuffled.
+4. Propose two alternative detection strategies that would catch reversed pairs
+   (e.g. bidirectional pair scanning, graph-based reachability).
+5. Explain why AI analysis can close this gap where traditional scripting cannot.
+```
+
+**Use this output for your lab report** — it is the core learning point of the workshop.
+
+------
+
+# Exercise 5: Analysis 4 — Policy Complexity Hotspot
+
+## Task 1: Identify the Most Problematic Address Pairs
+
+```
+@lab_output/traditional_report.json
+
+Using the flagged_policies index in this report:
+1. Count how many times each srcaddr appears across all flagged policies.
+2. Count how many times each dstaddr appears across all flagged policies.
+3. Rank the top 5 srcaddr and top 5 dstaddr by frequency.
+4. For the top srcaddr+dstaddr combination, list all flagged policies between
+   that pair and categorize each by issue type.
+5. Summarize: which address pair has the most redundant rules and what issue
+   types dominate?
+```
+
+**Expected output:** A ranked hotspot list showing which address objects are responsible for the most policy bloat — useful for prioritizing real-world cleanup effort.
+
+------
+
+# Exercise 6: Analysis 5 — Consolidated Ruleset
+
+## Task 1: Produce a Minimal Clean Policy Set
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+Produce a consolidated ruleset that removes all detected redundancies:
+
+1. From duplicate groups: keep one policy per group (lowest policyid).
+2. From shadow pairs: remove the unreachable specific rule.
+3. From subnet-overlap pairs: remove the redundant narrow rule.
+4. From collapsible service groups: merge each group into one policy with a
+   combined service list. Name the merged policy: <srcaddr>-<dstaddr>-MERGED.
+
+At the end report:
+- Original policy count
+- Policies removed
+- Policies merged
+- Final policy count
+- Reduction percentage: (original - final) / original * 100
+
+List any flagged policies that could NOT be safely auto-merged and explain why.
+```
+
+**Record your results (Model 1: MiniMax M2.5 — `minimax/minimax-m2.5:free`):**
+
+| Metric | Value |
+|--------|-------|
+| Original count | |
+| Policies removed | |
+| Policies merged | |
+| Final count | |
+| Reduction % | |
+
+------
+
+# Exercise 7: Model Comparison — Repeat Exercises 2–6 with a Second Model
+
+The goal of this exercise is to run the same five analyses with a model from a **different architecture family** and compare the quality, depth, and accuracy of the outputs. The point of the comparison is to see how reasoning style differs across model families — not to compare free-tier rate limits against paid-tier ones — so pick a model from a non-MiniMax family.
+
+## Task 1: Pick a Comparison Model
+
+Exit the current session and start a new one with a model from a different family. Free options on OpenRouter (verify availability at lab time — the `:free` suffix is what matters):
+
+| Family | OpenRouter ID | Notes |
+|--------|---------------|-------|
+| Meta Llama | `meta-llama/llama-3.3-70b-instruct:free` | Open-weights flagship |
+| Google Gemini | `google/gemini-2.0-flash-exp:free` | Fast, strong on structured output |
+| Alibaba Qwen | `qwen/qwen-2.5-72b-instruct:free` | Strong reasoning |
+| DeepSeek | `deepseek/deepseek-r1:free` | Reasoning-tuned |
+
+Or, if you have OpenRouter credits, use a paid frontier model for the strongest comparison:
+
+| Family | OpenRouter ID | Cost |
+|--------|---------------|------|
+| Anthropic Claude | `anthropic/claude-3-5-sonnet` | Paid |
+| OpenAI | `openai/gpt-4o` | Paid |
+
+Start the new session (substitute your chosen ID):
+
+```bash
+opencode --model meta-llama/llama-3.3-70b-instruct:free
+```
+
+> **Why not MiniMax M2.5 paid tier?** The paid `minimax/minimax-m2.5` is the same model with higher rate limits. Comparing it against the free tier of itself would only test rate-limit behaviour, not reasoning differences.
+
+## Task 2: Re-Run All Five Analyses
+
+Run each prompt from Exercises 2–6 exactly as written. The `@` file references ensure both models receive identical context.
+
+**Exercise 2 repeat:**
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+Using these two reports:
+- zero_report.json is the ground truth (actual counts per issue type)
+- traditional_report.json is what the CIDR detection script found
+
+For each issue type (shadow, duplicate, subnet_overlap, svc_overlap):
+1. Get the actual count from zero_report.json.
+2. Get the detected count from traditional_report.json.
+3. Calculate recall = detected / actual as a percentage.
+4. Identify which types had the worst recall and explain why.
+5. Present results as a table: Type | Actual | Detected | Recall %
+```
+
+**Exercise 3 repeat:**
+
+```
+@lab_output/traditional_report.json
+
+Using the flagged_policies index, produce a step-by-step remediation plan
+ordered as: duplicates, shadow rules, subnet overlaps, collapsible service merges.
+
+For each category provide DELETE calls and merged policy JSON payloads as applicable.
+```
+
+**Exercise 4 repeat:**
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+The traditional detection script uses position-dependent CIDR containment.
+Phase 1 shuffled policies before pushing, so ~50% of pairs have reversed order.
+
+1. How many shadow pairs were missed?
+2. How many subnet-overlap pairs were missed?
+3. Why does positional detection fail when rules are shuffled?
+4. Propose two alternative detection strategies.
+5. Why can AI close this gap where traditional scripting cannot?
+```
+
+**Exercise 5 repeat:**
+
+```
+@lab_output/traditional_report.json
+
+Using the flagged_policies index:
+1. Count srcaddr and dstaddr frequency across all flagged policies.
+2. Rank the top 5 of each.
+3. For the top pair, list all flagged policies and categorize by issue type.
+4. Which address pair has the most redundant rules?
+```
+
+**Exercise 6 repeat:**
+
+```
+@lab_output/traditional_report.json @lab_output/zero_report.json
+
+Produce a consolidated ruleset removing all detected redundancies.
+Keep lowest policyid for duplicates, remove unreachable shadow/subnet rules,
+merge collapsible service groups into <srcaddr>-<dstaddr>-MERGED rules.
+Report: original count, removed, merged, final count, reduction %.
+```
+
+## Task 3: Record and Compare Results
+
+**Record your results (Model 2: your chosen non-MiniMax model):**
+
+| Issue Type | Actual | Detected | Recall % |
+|------------|--------|----------|----------|
+| Shadow pairs | | | |
+| Duplicates | | | |
+| Subnet overlaps | | | |
+| Collapsible svc | | | |
+
+| Metric | Model 1 (MiniMax M2.5 — `minimax/minimax-m2.5:free`) | Model 2 (your choice) |
+|--------|-----------------------------|-----------------------|
+| Shadow pairs recalled | | |
+| Duplicates recalled | | |
+| Remediation plan quality | | |
+| Blind spot explanation clarity | | |
+| Merged policy JSON correctness | | |
+| Final policy count | | |
+| Reduction % | | |
+
+## Task 4: Discussion Questions
+
+Answer the following based on your comparison:
+
+1. Did both models agree on the accuracy scorecard numbers?
+2. Which model produced more accurate or complete remediation JSON payloads?
+3. Did the blind spot explanations differ in depth or correctness?
+4. Which model would you use in a production remediation workflow and why?
+
+------
+
+# Exercise 8: Save and Export Results
+
+## Task 1: Save the Full Analysis Output
+
+In your final session, ask the model to write a combined summary:
+
+```
+@lab_output/zero_report.json @lab_output/traditional_report.json
+
+Write a complete analysis summary to lab_output/ai_analysis_report.md.
+
+Include these sections:
+1. Accuracy Scorecard — table comparing ground truth vs detected counts
+2. Remediation Plan — ordered list of DELETE calls and merged policy payloads
+3. Blind Spot Explanation — why positional detection missed ~50% of shadow/subnet pairs
+4. Hotspot Analysis — top srcaddr/dstaddr pairs by overlap frequency
+5. Consolidated Ruleset Metrics — original count, final count, reduction %
+6. Model Comparison Summary — key differences observed between the two models
+```
+
+## Task 2: Verify the File
+
+```bash
+cat lab_output/ai_analysis_report.md
+```
+
+------
+
+> **Next Steps:** Proceed to **Lab 5** to delete all lab-generated rules from FortiGate and remove the Linux Host A IP aliases. (If you completed the optional FortiAnalyzer appendix, Lab 5 will also clean up the lab log entries from FAZ.)

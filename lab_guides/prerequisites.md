@@ -6,15 +6,14 @@ Complete every item in this checklist before starting Lab 1. Missing prerequisit
 
 ## 1. Infrastructure — Virtual Machines
 
-All five components must be deployed and powered on before Lab 1 begins.
+The active workshop path (Labs 1–5) requires two VMs: **FortiGate** and **Linux Host A**. **FortiAnalyzer** and **Linux Host B** are optional — only deploy them if you plan to complete the FortiAnalyzer appendix in Lab 1 or the optional Host B connectivity flows in Lab 2. FortiManager is intentionally out of scope.
 
 | Component | Version | Management IP | Notes |
 |-----------|---------|---------------|-------|
-| **FortiGate** | FortiOS 8.0 | `172.16.0.1` (mgmt) | port1 = `192.168.1.1` (inside), port2 = `10.10.0.1` (outside) |
-| **FortiManager** | 8.0 | `172.16.0.3` | Same hypervisor host or reachable via management network |
-| **FortiAnalyzer** | 8.0 | `172.16.0.2` | Must have sufficient disk space for log ingestion |
-| **Linux Host A** | Ubuntu 22.04+ recommended | `192.168.1.100` | Connected to inside LAN — eth0 |
-| **Linux Host B** | Ubuntu 22.04+ recommended | `10.10.0.100` | Connected to outside WAN — eth0 |
+| **FortiGate** | FortiOS 8.0 | `172.16.0.4` (port3 / mgmt) | port2 = `192.168.1.4` (inside), port1 = `10.10.0.4` (outside) |
+| **Linux Host A** | Ubuntu 22.04+ recommended | `192.168.1.100` (inside LAN — eth0) | Required: runs the lab tool, generates traffic, runs OpenCode |
+| **FortiAnalyzer** *(optional)* | 8.0 | `172.16.0.5` | Only required if you complete the FortiAnalyzer appendix in Lab 1 |
+| **Linux Host B** *(optional)* | Ubuntu 22.04+ recommended | `10.10.0.100` (outside WAN — eth0) | Only required if you run the optional Host B connectivity flows in Lab 2 |
 
 Supported hypervisors: VMware ESXi / Workstation, VirtualBox, KVM/QEMU.
 
@@ -27,12 +26,10 @@ The following licenses must be active before the workshop begins. Verify license
 | License | Required For | Where to Verify |
 |---------|-------------|-----------------|
 | FortiGate VM license | All labs | FortiGate GUI → Dashboard |
-| FortiManager VM license | Labs 1, 3, 4, 5 | FortiManager GUI → Dashboard |
-| FortiAnalyzer VM license | Labs 1, 2, 3, 4 | FortiAnalyzer GUI → Dashboard |
-| **FortiAI Assist** (FMG) | Labs 3 and 4 | FortiManager → System Settings → FortiAI |
-| **FortiAI Assist** (FAZ) | Labs 2 and 3 | FortiAnalyzer → System Settings → FortiAI |
+| FortiAnalyzer VM license *(optional)* | Only for the optional FAZ appendix | FortiAnalyzer GUI → Dashboard |
+| **FortiAI Assist** (FAZ) *(optional)* | Only for the optional FAZ NLQ demo in Lab 2 appendix | FortiAnalyzer → System Settings → FortiAI |
 
-> FortiAI Assist licenses must be applied and validated **before** Lab 1 Exercise 2. If the license is not active, the FortiAI module will not appear in the navigation menu.
+> The optional FortiAI Assist FAZ license must be applied **before** the Lab 2 FAZ appendix if you plan to use the Natural Language Query playground. If the license is not active, the FortiAI module will not appear in the FAZ navigation menu.
 
 ---
 
@@ -42,18 +39,17 @@ The following keys must be obtained before Lab 2. FortiGate and FortiAnalyzer to
 
 | Credential | Used In | How to Obtain |
 |------------|---------|---------------|
-| **FortiGate REST API token** | Phase 1, 2, 3 | Created in Lab 1 Exercise 3 |
-| **FortiAnalyzer REST API token** | Phase 3 | Created in Lab 1 Exercise 3 |
-| **OpenAI API key** (`sk-...`) | Phase 3 AI analysis | [platform.openai.com](https://platform.openai.com) — requires GPT-4o access |
-| **Anthropic API key** (`sk-ant-...`) | Phase 3 AI analysis | [console.anthropic.com](https://console.anthropic.com) |
+| **FortiGate REST API token** | Phase 1, 2, 3, 4 | Created in Lab 1 Exercise 3 |
+| **FortiAnalyzer REST API token** *(optional)* | Phase 4 FAZ cleanup only | Created in the optional Lab 1 FAZ appendix |
+| **OpenRouter API key** | Phase 3 AI analysis (OpenCode) | [openrouter.ai](https://openrouter.ai) — configure in OpenCode settings |
 
-> OpenAI and Anthropic keys must have sufficient quota for Phase 3. Each analysis run sends the full rule set as JSON — budget for approximately 8,000–12,000 tokens per model call depending on rule count.
+> The OpenRouter key is configured in OpenCode, not in `config.yaml`. No AI keys are stored in the project config files.
 
 ---
 
 ## 4. Software on Linux Hosts
 
-Run these checks on **both** Linux Host A and Linux Host B before Lab 1.
+Run these checks on **Linux Host A** before Lab 1. Linux Host B is not required for traffic generation — all lab rules are inside→outside only.
 
 ### Python
 
@@ -76,8 +72,10 @@ sudo apt update && sudo apt install -y hping3
 
 ### Lab repository
 
+The instructor will provide the repository URL at the start of the session. Once you have it:
+
 ```bash
-git clone <repo-url> ~/ruleTrafficGenerator
+git clone <repo-url-from-instructor> ~/ruleTrafficGenerator
 cd ~/ruleTrafficGenerator
 python3 -m venv .venv
 source .venv/bin/activate
@@ -103,16 +101,16 @@ Options:
 
 Commands:
   all      Run phases 1 -> 2 -> 3 in sequence.
-  analyze  Phase 3: Analyze hit counts via FortiGate, FortiAnalyzer...
-  cleanup  Phase 4: Delete test-tagged logs from FortiGate and...
+  analyze  Phase 3: Detect policy issues using ground truth and/or...
+  cleanup  Phase 4: Delete test-tagged logs from FortiAnalyzer.
   reset    Delete all lab rules AND all lab logs (full reset).
   rules    Phase 1: Generate and push firewall rules to FortiGate.
-  traffic  Phase 2: Generate traffic between linux1 and linux2.
+  traffic  Phase 2: Generate traffic between LinuxA and LinuxB.
 ```
 
 ### Root access
 
-Phase 2 traffic generation requires raw socket access. Verify sudo works on both hosts:
+Phase 2 traffic generation requires raw socket access on Linux Host A. Verify `sudo` works:
 
 ```bash
 sudo python3 -c "import socket; print('raw socket access OK')"
@@ -126,14 +124,14 @@ Verify the following paths are reachable **before** starting Lab 1. All failures
 
 | From | To | Test |
 |------|----|------|
-| Workstation | FortiGate GUI | `https://192.168.1.1` loads in browser |
-| Workstation | FortiManager GUI | `https://172.16.0.3` loads in browser |
-| Workstation | FortiAnalyzer GUI | `https://172.16.0.2` loads in browser |
-| Linux Host A | FortiGate port1 | `ping 192.168.1.1` |
-| Linux Host B | FortiGate port2 | `ping 10.10.0.1` |
-| Linux Host A | Linux Host B (through FGT) | `ping 10.10.0.100` |
-| Linux Host B | Linux Host A (through FGT) | `ping 192.168.1.100` |
-| Linux Host A | FortiGate API | `curl -sk https://192.168.1.1/api/v2/cmdb/system/status -H "Authorization: Bearer <token>"` returns JSON |
+| Workstation | FortiGate GUI | `https://192.168.1.4` loads in browser |
+| Linux Host A | FortiGate port2 (inside) | `ping 192.168.1.4` |
+| Linux Host A | FortiGate API | `curl -sk https://192.168.1.4/api/v2/cmdb/system/status -H "Authorization: Bearer <token>"` returns JSON |
+| Linux Host B | FortiGate port1 (outside) *(optional)* | `ping 10.10.0.4` — only if Host B is deployed |
+| Linux Host A | Linux Host B (through FGT) *(optional)* | `ping 10.10.0.100` — only if Host B is deployed |
+| Linux Host B | Linux Host A (through FGT) *(optional)* | `ping 192.168.1.100` — only if Host B is deployed |
+| Workstation | FortiAnalyzer GUI *(optional)* | `https://172.16.0.5` loads in browser — only if FAZ deployed |
+| Linux Host A | FortiAnalyzer API *(optional)* | `curl -sk https://172.16.0.5/jsonrpc -H "Authorization: Bearer <faz-token>"` returns JSON |
 
 ---
 
@@ -158,16 +156,14 @@ No Python development experience is required. Students only run the tool, not wr
 Use this checklist at the start of each session to confirm readiness.
 
 ```
-[ ] FortiGate is reachable at https://192.168.1.1
-[ ] FortiManager is reachable at https://172.16.0.3
-[ ] FortiAnalyzer is reachable at https://172.16.0.2
-[ ] FortiAI Assist license is active on FortiManager
-[ ] FortiAI Assist license is active on FortiAnalyzer
-[ ] Linux Host A: Python 3.10+, hping3, repo cloned, pip install done
-[ ] Linux Host B: Python 3.10+, hping3, repo cloned, pip install done
-[ ] Linux Host A can ping Linux Host B through FortiGate
-[ ] Linux Host B can ping Linux Host A through FortiGate
-[ ] OpenAI API key available
-[ ] Anthropic API key available
+[ ] FortiGate is reachable at https://192.168.1.4
+[ ] Linux Host A: Python 3.10+, repo cloned, pip install done
+[ ] Linux Host A: hping3 installed (`hping3 --version`)
+[ ] Linux Host A: sudo works (`sudo -n true`)
+[ ] Linux Host A can ping FortiGate at 192.168.1.4
+[ ] OpenRouter API key available (configured in OpenCode)
 [ ] config.yaml.example copied to config.yaml (done in Lab 1 Exercise 3)
+[ ] (Optional) Linux Host B is deployed and Linux Host A can ping it through FortiGate — only for the optional Lab 2 Host B flows
+[ ] (Optional) FortiAnalyzer is reachable at https://172.16.0.5 — only if doing the FAZ appendix
+[ ] (Optional) FortiAI Assist license is active on FortiAnalyzer — only if doing the FAZ appendix
 ```

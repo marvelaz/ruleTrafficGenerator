@@ -1,10 +1,10 @@
 # Network Topology
 
-The following topology is used across the labs. It includes a FortiGate running FortiOS 8.0, a FortiManager 8.0, a FortiAnalyzer 8.0, and two Linux hosts that generate traffic. One Linux host is connected to the inside network of the FortiGate, and the other is connected to the outside network.
+The active workshop path (Labs 1–5) uses a **FortiGate** running FortiOS 8.0 and **Linux Host A** as the inside-network traffic generator. **FortiManager**, **FortiAnalyzer**, and **Linux Host B** appear in the diagram for reference but are **not used by the active path** — FortiAnalyzer is only touched if you complete the optional appendix in Lab 1, and Linux Host B is only needed for the optional connectivity sanity-check flows in Lab 2. FortiManager is intentionally out of scope for this workshop.
 
-This setup allows you to test policies, analyze logs, and validate AI‑generated changes with real traffic flows.
+This setup lets you push intentionally flawed firewall rules onto FortiGate, generate traffic from Linux Host A, and analyze rule hygiene using both traditional CIDR detection (Lab 3) and AI analysis via OpenCode (Lab 4).
 
-![Alt text](images/network_topology.png)
+![Network topology diagram](images/network_topology.png)
 
 ------
 
@@ -12,23 +12,22 @@ This setup allows you to test policies, analyze logs, and validate AI‑generate
 
 | Component                  | Role                              | Key Functions                                                |
 | -------------------------- | --------------------------------- | ------------------------------------------------------------ |
-| **FortiGate 8.0**          | Main Firewall (Device Under Test) | Hosts policy packages · Generates traffic via inside/outside interfaces · Sends logs to FortiAnalyzer · Managed by FortiManager |
-| **FortiAnalyzer 8.0**      | Log & Reporting Engine            | Collects FortiGate logs · Generates policy usage reports · Validates before/after policy changes |
-| **FortiManager 8.0**       | Central Policy Management         | Manages policies via ADOMs · Runs FortiAI for script generation & analysis · Supports previews, diff checks, and rollbacks |
-| **Linux Host A** (Inside)  | Internal Traffic Generator        | Simulates internal users · Drives policy hit counts · Validates log entries |
-| **Linux Host B** (Outside) | External Traffic Generator        | Simulates external systems · Drives policy hit counts · Validates log entries |
+| **FortiGate 8.0**          | Main Firewall (Device Under Test) | Receives lab rules via REST API · Reports per-policy hit counts via the monitor API · Source of truth for `phase3_traditional` |
+| **Linux Host A** (Inside)  | Inside Traffic Generator + lab driver | Runs the lab tool (`main.py`) · Generates inside→outside traffic via Scapy · Hosts the JSON reports consumed by OpenCode |
+| **FortiAnalyzer 8.0** *(optional)* | Log & Reporting Engine    | Collects FortiGate logs and runs custom analytics — only used in the optional FAZ appendix |
+| **Linux Host B** (Outside) *(optional)* | External traffic target  | Provides a destination on the outside subnet for the optional connectivity sanity-checks in Lab 2. Not used by the lab tool itself. |
+| **FortiManager 8.0** *(not used)* | Central Policy Management | Out of scope for this workshop. Listed in the diagram for completeness. |
 
 ## IP Addressing 
 
 | Device                | Interface       | IP Address    | Subnet Mask | Gateway     | Network     |
 | --------------------- | --------------- | ------------- | ----------- | ----------- | ----------- |
-| **FortiGate 8.0**     | port1 (Inside)  | 192.168.1.1   | /24         | —           | Inside LAN  |
-| **FortiGate 8.0**     | port2 (Outside) | 10.10.0.1     | /24         | —           | Outside WAN |
-| **FortiGate 8.0**     | mgmt            | 172.16.0.1    | /24         | —           | Management  |
-| **FortiAnalyzer 8.0** | mgmt            | 172.16.0.2    | /24         | 172.16.0.1  | Management  |
-| **FortiManager 8.0**  | mgmt            | 172.16.0.3    | /24         | 172.16.0.1  | Management  |
-| **Linux Host A**      | eth0            | 192.168.1.100 | /24         | 192.168.1.1 | Inside LAN  |
-| **Linux Host B**      | eth0            | 10.10.0.100   | /24         | 10.10.0.1   | Outside WAN |
+| **FortiGate 8.0**     | port2 (Inside)  | 192.168.1.4   | /24         | —           | Inside LAN  |
+| **FortiGate 8.0**     | port1 (Outside) | 10.10.0.4     | /24         | —           | Outside WAN |
+| **FortiGate 8.0**     | port3 (Mgmt)    | 172.16.0.4    | /24         | —           | Management  |
+| **Linux Host A**      | eth0            | 192.168.1.100 | /24         | 192.168.1.4 | Inside LAN  |
+| **FortiAnalyzer 8.0** *(optional)* | mgmt | 172.16.0.5    | /24         | 172.16.0.4  | Management  |
+| **Linux Host B** *(optional)*      | eth0 | 10.10.0.100   | /24         | 10.10.0.4   | Outside WAN |
 
 > **VDOM:** The FortiGate targets VDOM `root` by default. All lab policies are installed into this VDOM.
 
@@ -36,14 +35,21 @@ This setup allows you to test policies, analyze logs, and validate AI‑generate
 
 ## IP Aliases (Virtual Addresses)
 
-Both Linux hosts have additional virtual IP aliases added to their primary interface. These simulate multiple distinct source and destination hosts, making traffic patterns and rule matches appear realistic rather than single-host.
+**Linux Host A** has ten virtual IP aliases (`192.168.1.101–192.168.1.110`) added on top of its primary `192.168.1.100/24` address. These simulate multiple distinct source hosts, making traffic patterns and rule matches appear realistic rather than single-host.
 
-Aliases are configured by running `sudo python3 main.py traffic --setup-aliases` on each host.
+Aliases are configured by running the following on Linux Host A:
 
-| Host           | Interface | Alias Range                              | Network     |
-| -------------- | --------- | ---------------------------------------- | ----------- |
-| **Linux Host A** (Inside)  | eth0 | `192.168.1.101` – `192.168.1.110` (/24) | Inside LAN  |
-| **Linux Host B** (Outside) | eth0 | `10.10.0.101` – `10.10.0.110` (/24)    | Outside WAN |
+```bash
+source .venv/bin/activate
+sudo $(which python3) main.py traffic --setup-aliases
+```
+
+> Use `sudo $(which python3)` (not `sudo python3`) so the venv interpreter is invoked — the system Python lacks the `rich` dependency and will crash with `ModuleNotFoundError`.
+
+| Host           | Interface | Alias Range                              | Network     | Configured by tool? |
+| -------------- | --------- | ---------------------------------------- | ----------- | ------------------- |
+| **Linux Host A** (Inside)  | eth0 | `192.168.1.101` – `192.168.1.110` (/24) | Inside LAN  | Yes |
+| **Linux Host B** (Outside) *(optional)* | eth0 | `10.10.0.101` – `10.10.0.110` (/24)    | Outside WAN | No — informational only; `--setup-aliases` does not configure Host B because the lab does not use it |
 
 ------
 
@@ -51,8 +57,8 @@ Aliases are configured by running `sudo python3 main.py traffic --setup-aliases`
 
 | Host           | Direction              | Purpose                                              |
 | -------------- | ---------------------- | ---------------------------------------------------- |
-| **Linux Host A** | Inside → Outside     | Simulates internal users initiating outbound sessions |
-| **Linux Host B** | Outside → Inside     | Simulates external systems reaching inbound services  |
+| **Linux Host A** | Inside → Outside     | Simulates internal users initiating outbound sessions. **Primary traffic host — required.** |
+| **Linux Host B** | —                    | Not used for traffic generation. All lab rules are inside→outside only. |
 
 Traffic is designed to match **60–75%** of configured firewall rules. The remaining **25–40%** of rules are intentionally left with zero hit counts — these are the candidates for unused-rule detection in the analysis phase.
 

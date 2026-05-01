@@ -9,31 +9,35 @@
 # FortiGate
 # -----------------------------------------------------------------------------
 fortigate:
-  host:       "192.168.1.1"       # FortiGate management IP or FQDN
-  port:       443
-  api_token:  "REPLACE_ME"        # REST API token (System > API Tokens)
-  vdom:       "root"              # Target VDOM
-  verify_ssl: false               # Set true in production with valid cert
-  timeout:    30                  # HTTP request timeout in seconds
+  host:              "192.168.1.4"   # FortiGate inside-interface IP (reachable from Linux Host A)
+  port:              443
+  api_token:         "REPLACE_ME"    # REST API token (System > API Tokens)
+  vdom:              "root"          # Target VDOM
+  verify_ssl:        false           # Set true in production with valid cert
+  timeout:           30              # HTTP request timeout in seconds
+  inside_interface:  "port2"         # FortiGate interface facing the inside (LinuxA) network
+  outside_interface: "port1"         # FortiGate interface facing the outside (LinuxB) network
 
 # -----------------------------------------------------------------------------
-# FortiAnalyzer
+# FortiAnalyzer (OPTIONAL — only needed if you completed the FortiAnalyzer
+# appendix in Lab 1 and want Phase 4 cleanup to also purge FAZ log entries.
+# Leave the entire block commented out for the FortiGate-only workshop path.)
 # -----------------------------------------------------------------------------
-fortianalyzer:
-  host:       "192.168.1.2"       # FortiAnalyzer management IP or FQDN
-  port:       443
-  api_token:  "REPLACE_ME"        # FAZ API token (System Settings > Admin > API)
-  adom:       "root"              # ADOM containing the FortiGate device
-  verify_ssl: false
-  timeout:    30
+# fortianalyzer:
+#   host:       "172.16.0.5"        # FortiAnalyzer management IP or FQDN
+#   port:       443
+#   api_token:  "REPLACE_ME"        # FAZ API token (System Settings > Admin > API)
+#   adom:       "root"              # ADOM containing the FortiGate device
+#   verify_ssl: false
+#   timeout:    30
 
 # -----------------------------------------------------------------------------
-# Network — Linux hosts (linux1 = inside, linux2 = outside)
+# Network — Linux hosts (LinuxA = inside, LinuxB = outside)
 # -----------------------------------------------------------------------------
 network:
   inside:
     primary_ip:       "192.168.1.100"
-    linux_interface:  "eth0"           # Interface to add aliases on (linux1)
+    linux_interface:  "eth0"           # Interface to add aliases on (LinuxA)
     aliases:                           # Virtual IPs added by --setup-aliases
       - "192.168.1.101"
       - "192.168.1.102"
@@ -48,7 +52,7 @@ network:
 
   outside:
     primary_ip:       "10.10.0.100"
-    linux_interface:  "eth0"           # Interface to add aliases on (linux2)
+    linux_interface:  "eth0"           # Interface to add aliases on (LinuxB)
     aliases:
       - "10.10.0.101"
       - "10.10.0.102"
@@ -71,14 +75,18 @@ traffic:
   inter_session_delay:  1.0     # Seconds between sessions (keeps logs readable)
 
 # -----------------------------------------------------------------------------
-# AI models (Phase 3)
+# Rule generation (Phase 1)
 # -----------------------------------------------------------------------------
-ai:
-  openai_api_key:    "REPLACE_ME"          # sk-...
-  openai_model:      "gpt-4o"
-  anthropic_api_key: "REPLACE_ME"          # sk-ant-...
-  anthropic_model:   "claude-sonnet-4-6"
-  max_tokens:        4096
+# Ratios control what fraction of the final policy count each overlap type
+# occupies. They are automatically normalized, so they don't need to sum to 1.
+# Clean rules always fill the remainder to ensure --count N pushes exactly N policies.
+rules:
+  ratios:
+    shadow:          0.20   # broad rule immediately followed by narrower (unreachable) rule
+    duplicate:       0.15   # identical src/dst/service pair under a different name
+    subnet_overlap:  0.15   # /24 rule that makes an enclosed /28 or /32 redundant
+    service_overlap: 0.15   # same src/dst, multiple services (collapsible to one rule)
+    clean:           0.35   # no overlap — makes patterns non-obvious during inspection
 
 # -----------------------------------------------------------------------------
 # Lab metadata

@@ -1,152 +1,174 @@
-# Lab 3: AI-Assisted Policy Hygiene — Finding Unused, Shadowed, and Conflicting Rules
+# Lab 3: Policy Analysis — Ground Truth & Traditional CIDR Detection
 
-In this lab, you will work with a very large firewall policy set that has more than 500 rules. Many of these rules may be unused, hidden (shadowed), or even conflicting with each other.
+In this lab you run two Python analysis passes against the 100-rule set generated in Lab 2:
 
-You will learn how to use FortiManager tools and FortiAI to find risky or unnecessary rules. You will also check your results using traffic data from FortiAnalyzer.
+1. **`phase3_zero`** — reads the local JSON written by Phase 1 and reports the *exact* count of every overlap type using the embedded `_type` field. This is the **answer key**.
+2. **`phase3_traditional`** — connects to FortiGate and detects issues using only the FortiGate REST API: hit counts from the monitor endpoint and CIDR containment math from the CMDB. No `_type` field, no local JSON. This is what a real engineer would write without ground-truth metadata.
 
-At the end of this lab, you will understand how AI can help keep firewall policies clean, simple, and safe.
+At the end you will know which issue types `phase3_traditional` detects reliably and which it systematically misses — that gap is the motivation for Lab 4 (AI analysis with OpenCode).
 
 ------
 
 ## Objectives
 
-- Learn how to import or sync a large policy package into FortiManager.
-- Use Policy Check and FortiAI to find unused, shadowed, or conflicting firewall rules.
-- Validate AI findings with FortiAnalyzer traffic reports.
+- Run the ground truth baseline (`phase3_zero`) to establish the answer key.
+- Run the traditional CIDR detection (`phase3_traditional`).
+- Compare the two reports and quantify which issue types the traditional script misses.
 
 ------
 
 ## Time to Complete
 
-**Estimated: 70–75 minutes**
+**Estimated: 25–35 minutes**
 
 ------
 
-## Exercise 1: Importing or Syncing the Policy Package
+# Exercise 1: Phase 3 — Ground Truth Baseline (phase3_zero)
 
-### Task 1 — Load the Policy Package with 500+ Rules
+This script reads the local JSON backup written by Phase 1. It knows the exact type of every rule (`_type` field) and reports counts per category. No FortiGate connection required. **This is the answer key.**
 
-1. Log in to FortiManager using your lab username and password.
+## Task 1: Run the Ground Truth Report
 
-   > 📸 *Screenshot: FortiManager Login*
+On Linux Host A:
 
-2. Click **Device Manager** from the left menu.
+```bash
+cd ~/ruleTrafficGenerator
+source .venv/bin/activate
+python3 main.py analyze --zero
+```
 
-   > 📸 *Screenshot: Device Manager*
+Expected output (your numbers will differ slightly — counts depend on `rules.ratios` in `config.yaml` and on rounding when each pattern emits 2+ policies per group):
 
-3. Select the FortiGate device assigned to you.
+```
+────────── Phase 3 — Zero: Ground Truth Baseline ──────────
+Rules file contains 100 policies total.
 
-4. At the top menu, click **Import Policy** or **Sync Device** (your lab instructions will say which one).
+┌─ Rule Type Summary ──────────────────────────────────────────────────┐
+│ Group               │ Type                │ Count │                  │
+│ Shadow Rules        │ Broad (catches)     │  ~10  │                  │
+│ Shadow Rules        │ Narrow (unreachable)│  ~10  │                  │
+│ Duplicate Rules     │ Exact copy          │  ~14  │                  │
+│ Subnet Overlap      │ Broad /24           │   ~7  │                  │
+│ Subnet Overlap      │ Specific /28-/32    │   ~7  │                  │
+│ Collapsible Svc     │ One svc per rule    │  ~17  │                  │
+│ Clean Rules         │ No overlap          │  ~35  │                  │
+└──────────────────────────────────────────────────────────────────────┘
 
-   > 📸 *Screenshot: Sync Device*
+Total: 100 rules — ~35 clean, ~65 with overlap/redundancy issues
 
-5. Choose **Policy Package** and follow the prompts to complete the import.
+Zero report saved: lab_output/zero_report.json
+```
 
-6. When the import finishes, confirm that you see the large policy set with **500+ firewall rules**.
+> **Counts vs. groups.** The numbers above are **policies** (each duplicate group emits 2 policies, so ~14 duplicate policies ≈ ~7 duplicate *groups*). `phase3_traditional` in Exercise 2 reports *groups*, so its duplicate count will be roughly half of what you see here. Both views are correct — just measuring different things.
 
-------
-
-## Exercise 2: Running Policy Check for Shadowed and Never-Matching Rules
-
-### Task 1 — Use Policy Check
-
-1. In the left menu, go to **Policy & Objects → Policy Packages**.
-
-   > 📸 *Screenshot: Policy Packages*
-
-2. Pick the policy package you imported in Exercise 1.
-
-3. Click **Policy Check** on the top toolbar.
-
-   > 📸 *Screenshot: Policy Check Button*
-
-4. Turn on the following checks:
-
-   - Shadowed Policies
-   - Never-Matching Rules
-   - Redundant or Unused Objects
-
-5. Click **Run** to start the analysis.
-
-6. Review the results screen.
-
-   > 📸 *Screenshot: Policy Check Results*
-
-7. Write down:
-
-   - Number of shadowed rules
-   - Number of rules that will never match
-   - Any warnings about objects not being used
+> Record the actual numbers from your run — you will compare them against the traditional detection output in the next task.
 
 ------
 
-## Exercise 3: Using FortiAI to Ask Questions About Policy Quality
+## Task 2: Review the JSON Report
 
-### Task 1 — Use FortiAI to Find Unused Rules
+```bash
+cat lab_output/zero_report.json
+```
 
-1. In FortiManager, click the **FortiAI** icon at the top.
+Key fields (numbers are illustrative — yours will vary by a few units):
 
-   > 📸 *Screenshot: FortiAI Icon*
+```json
+{
+  "source": "phase3_zero",
+  "metadata": { "total_pushed": 100, "shadow": 20, "duplicate": 14, ... },
+  "counts": {
+    "shadow-broad": 10, "shadow-specific": 10,
+    "duplicate": 14,
+    "subnet-overlap-broad": 7, "subnet-overlap-specific": 7,
+    "svc-overlap": 17,
+    "clean": 35
+  },
+  "shadow_pairs": [ {"broad": "CORP-INET-WEB-0042", "shadowed": "CORP-INET-WEB-0019"}, ... ],
+  "duplicate_groups": [ ["MGMT-WAN-PING-0007", "MGMT-WAN-PING-0051"], ... ],
+  "service_overlap_groups": [ [...], ... ],
+  "subnet_overlap_pairs": [ {"broad": "...", "specific": "..."}, ... ]
+}
+```
 
-2. When the AI window opens, type:
+> `counts.duplicate` is the total number of duplicate **policies** (~14). `duplicate_groups` is the list of **groups** (~7), each containing 2 policies. The same broad/specific split applies to `shadow_*` and `subnet-overlap_*`.
 
-   ```
-   Show me policies with no recent hits.
-   ```
-
-3. Wait for FortiAI to search the logs and policy data.
-
-   > 📸 *Screenshot: FortiAI Unused Rules*
-
-4. Next, type:
-
-   ```
-   Suggest consolidation candidates and create a script using Script Assistant style.
-   ```
-
-5. Review the script generated by FortiAI.
-
-   > 📸 *Screenshot: Script Assistant Output*
-
-6. Mark the rules that FortiAI recommends removing, merging, or changing.
-
-------
-
-## Exercise 4: Validating Findings with FortiAnalyzer
-
-### Task 1 — Check Policy Usage with Traffic Data
-
-1. Log in to **FortiAnalyzer**.
-
-2. In the menu, click **Reports → FortiGate Reports**.
-
-   > 📸 *Screenshot: FAZ Reports*
-
-3. Run the report named:
-
-   ```
-   Unused Policies (Last 30 Days)
-   ```
-
-4. Compare the results with:
-
-   - Policy Check findings
-   - FortiAI suggestions
-
-5. Make a list of rules that appear in all three sources. These rules are the strongest candidates for cleanup.
+> Keep this file open. It is the reference you compare every other detection method against.
 
 ------
 
-## Exercise 5 (Optional / Advanced): Exploring the MEA Policy Analyzer Wizard
+# Exercise 2: Phase 3 — Traditional CIDR Detection (phase3_traditional)
 
-### Task 1 — If Available, Open the MEA Policy Analyzer
+This script detects issues using only what is visible from the FortiGate API — no `_type` field, no local JSON. It runs two passes:
 
-1. In FortiManager, check if **MEA** is available in your system version.
+- **Pass A — Behavioral:** queries `GET /api/v2/monitor/firewall/policy` for hit counts. Policies with `hit_count == 0` are flagged unused.
+- **Pass B — Structural:** fetches all LAB policies and address objects, then uses CIDR containment math to detect duplicates, shadow pairs, subnet overlaps, and collapsible service groups.
 
-2. If it is, open MEA and choose **Policy Analyzer**.
+## Task 1: Run Structural Analysis Only (no traffic needed)
 
-   > 📸 *Screenshot: MEA Menu*
+```bash
+python3 main.py analyze --traditional --skip-unused
+```
 
-3. Follow the wizard to build **Policy Blocks** using learned traffic.
+Expected output (numbers are approximate — yours will vary by a few units):
 
-4. Review the recommended changes and how they simplify the policy set.
+```
+Pass B — Structural: CIDR containment analysis
+  Policies analysed       : 100
+  Duplicate groups        :  ~7   ← number of groups, not policies
+  Shadow pairs            :  ~5   ← roughly half detected (see note below)
+  Subnet-overlap pairs    :  ~4   ← also roughly half detected
+  Collapsible svc groups  :  ~8
+
+Traditional report saved: lab_output/traditional_report.json
+```
+
+> **`phase3_traditional` reports groups; `phase3_zero` reports policies.** A duplicate "group" is a set of 2+ policies sharing identical src/dst/service. A shadow/subnet-overlap "pair" is the broad rule plus its shadowed narrow rule. So if `phase3_zero` gave you 14 duplicate policies, expect ~7 duplicate groups here. They're not in conflict — they're two views of the same data.
+
+> **Known blind spot:** Shadow and subnet-overlap detection is position-dependent — the broad rule must appear before the narrow rule in FortiGate's sequence. Phase 1 shuffles rules before pushing, so roughly half of shadow/subnet pairs are reversed and will be missed. This is intentional — it demonstrates the limitation of purely positional detection.
+
+------
+
+## Task 2: Run Full Analysis Including Unused Detection
+
+After Lab 2 traffic has been generated:
+
+```bash
+python3 main.py analyze --traditional
+```
+
+Expected output adds:
+
+```
+Pass A — Behavioral: FortiGate hit-count analysis
+  Total lab policies : 100
+  Used               : ~68
+  Unused (0 hits)    : ~32
+```
+
+------
+
+## Task 3: Compare Against Ground Truth
+
+Open both reports side by side:
+
+```bash
+cat lab_output/zero_report.json | python3 -m json.tool | grep -A2 '"counts"'
+cat lab_output/traditional_report.json | python3 -m json.tool | grep -A2 '"counts"'
+```
+
+Fill in the comparison table. Use **groups** for both columns so you compare like with like — divide the zero-report's `counts.duplicate` (policies) by 2 to get duplicate groups, and use `len(shadow_pairs)`, `len(subnet_overlap_pairs)`, `len(service_overlap_groups)` directly from the zero report.
+
+| Issue Type | Ground Truth (zero, groups/pairs) | Detected (traditional, groups/pairs) | Gap |
+|------------|-----------------------------------|--------------------------------------|-----|
+| Shadow pairs | | | |
+| Duplicate groups | | | |
+| Subnet-overlap pairs | | | |
+| Collapsible svc groups | | | |
+| Unused (0 hits, policies) | N/A | | N/A |
+
+> The gap for shadow and subnet-overlap rows demonstrates exactly why AI analysis (Lab 4) is needed to close what traditional scripting misses.
+
+------
+
+> **Next Steps:** Proceed to **Lab 4** to use OpenCode + OpenRouter for interactive AI analysis of the JSON reports generated in this lab. Lab 4 reasons across the full policy set with large language models and closes the detection gap shown in your comparison table.
