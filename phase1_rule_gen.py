@@ -167,6 +167,14 @@ class FortiGateAPI:
             log.error(f"Failed to delete policy {policy_id}: {e}")
             return False
 
+    def get_existing_policy_names(self) -> set:
+        """Return set of all existing policy names to avoid name collisions."""
+        try:
+            resp = self.get("/cmdb/firewall/policy")
+            return {p["name"] for p in resp.get("results", [])}
+        except Exception:
+            return set()
+
     def get_all_lab_policies(self) -> list:
         """Return all policies tagged with LAB-TEST-2025."""
         try:
@@ -587,7 +595,12 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
         return metadata
 
     # Push policies to FortiGate
+    existing_policy_names = api.get_existing_policy_names()
+    if existing_policy_names:
+        console.print(f"  Existing policies on FGT : {len(existing_policy_names)} (name collisions will be skipped)")
+
     pushed = 0
+    skipped = 0
     failed = 0
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                   BarColumn(), TextColumn("{task.completed}/{task.total}"),
@@ -596,7 +609,10 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
         for policy in policies:
             # Remove internal tracking keys before pushing
             clean_policy = {k: v for k, v in policy.items() if not k.startswith("_")}
-            if api.create_policy(clean_policy):
+            if clean_policy["name"] in existing_policy_names:
+                log.debug(f"Skipping policy {clean_policy['name']} — already exists on FortiGate")
+                skipped += 1
+            elif api.create_policy(clean_policy):
                 pushed += 1
             else:
                 failed += 1
@@ -604,10 +620,13 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
             progress.advance(task)
 
     console.print(f"\n[green]✓ Pushed  : {pushed}")
+    if skipped:
+        console.print(f"[yellow]⚡ Skipped : {skipped} (already exist — run 'rules --delete' to reset)")
     if failed:
         console.print(f"[red]✗ Failed  : {failed}")
 
     metadata["pushed"] = pushed
+    metadata["skipped"] = skipped
     metadata["failed"] = failed
     return metadata
 
