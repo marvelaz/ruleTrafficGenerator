@@ -262,6 +262,8 @@ Copy `config.yaml.example` to `config.yaml` and fill in the `REPLACE_ME` values 
 | `fortigate.api_token` | REST API token (FortiOS: System > API Tokens) |
 | `fortigate.vdom` | Target VDOM (default: `root`) |
 | `fortianalyzer.*` | **Optional.** Only needed if FortiAnalyzer is deployed (Lab 1 appendix) and Phase 4 should also purge FAZ log entries. Leave the block commented out for the FortiGate-only path. |
+| `network.inside.subnets` | List of subnets used by Phase 1 to generate inside address objects. Default: `["192.168.1.0/24"]`. Keep a single `/24` in cloud environments (anti-spoofing blocks traffic to unrouted addresses); add more subnets for on-prem labs with additional routed networks. |
+| `network.outside.subnets` | Same as above for the outside network. Default: `["10.10.0.0/24"]`. |
 | `traffic.match_ratio` | Fraction of rules to match with traffic (0.60–0.75) |
 | `rules.ratios.shadow` | Fraction of total policies that are shadow-rule pairs (default: 0.20) |
 | `rules.ratios.duplicate` | Fraction of total policies that are duplicate pairs (default: 0.15) |
@@ -309,6 +311,7 @@ This Python tool is the primary data source for Labs 2–5.
 - **Intentional incompleteness:** Traffic only matches 60–75% of rules by design. The remaining 25–40% with zero hit counts are the evidence for the unused-rule analysis.
 - **Exact policy count:** `--count N` always pushes exactly N policies. Shadow, duplicate, and subnet-overlap types emit 2 policies per group; service-overlap is capped to avoid overshoot; clean rules fill the remainder.
 - **Config-driven ratios:** Overlap type distribution is set in `rules.ratios` in `config.yaml` — no code changes needed to tune the lab scenario.
+- **Config-driven address pool:** Phase 1 generates address objects only from `network.inside.subnets` and `network.outside.subnets`. Host `/32` objects come from the configured aliases. This ensures every rule target is reachable by the traffic generator — required in cloud environments where the hypervisor drops packets to/from unrouted addresses.
 - **Realistic policy names:** Names follow `{SRC_ZONE}-{DST_ZONE}-{SVC}-{NNNN}` (e.g. `CORP-INET-WEB-0042`). The overlap type is stored in the local JSON backup (`_type` field) but never pushed to FortiGate and never visible in the UI.
 - **Address-aware traffic:** Phase 2 resolves each policy's `srcaddr`/`dstaddr` objects to real IPs, ensuring packets hit the correct FortiGate rule rather than a broader catch-all.
 - **Round-robin target cycling:** Phase 2 cycles through target rules in shuffled order, guaranteeing every targeted rule receives at least one hit before repeating. This prevents false zero-hit counts within the matched set.
