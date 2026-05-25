@@ -38,6 +38,8 @@ network:
   inside:
     primary_ip:       "192.168.1.100"
     linux_interface:  "eth0"           # Interface to add aliases on (LinuxA)
+    subnets:                           # Subnets used for rule generation (Phase 1)
+      - "192.168.1.0/24"               # Add more subnets here for on-prem labs; keep single /24 for cloud
     aliases:                           # Virtual IPs added by --setup-aliases
       - "192.168.1.101"
       - "192.168.1.102"
@@ -53,6 +55,8 @@ network:
   outside:
     primary_ip:       "10.10.0.100"
     linux_interface:  "eth0"           # Interface to add aliases on (LinuxB)
+    subnets:                           # Subnets used for rule generation (Phase 1)
+      - "10.10.0.0/24"                 # Add more subnets here for on-prem labs; keep single /24 for cloud
     aliases:
       - "10.10.0.101"
       - "10.10.0.102"

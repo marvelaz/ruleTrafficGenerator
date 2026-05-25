@@ -59,18 +59,6 @@ SERVICES = [
     {"name": "SYSLOG",   "protocol": "UDP", "dst_port": "514"},
 ]
 
-INSIDE_SUBNETS = [
-    "192.168.1.0/24",
-]
-
-OUTSIDE_SUBNETS = [
-    "10.10.0.0/24",
-    "10.10.1.0/24",
-    "10.20.0.0/24",
-    "10.30.0.0/24",
-    "10.40.0.0/24",
-]
-
 TAG = "LAB-TEST-2025"
 
 
@@ -254,46 +242,76 @@ def _cidr_to_fgt(cidr: str) -> str:
     return f"{net.network_address} {net.netmask}"
 
 
-def build_address_pool(n_rules: int) -> list[dict]:
+def build_address_pool(n_rules: int, cfg: dict) -> list[dict]:
     """
     Generate a pool of address objects covering:
-    - Full /24 subnets (broad)
-    - /28 subnets within those /24s (medium)
-    - /32 host addresses (narrow, for overlap with broader rules)
+    - Full subnets from config (broad)
+    - /28 subnets carved from those (medium)
+    - /32 host addresses from configured primary IPs and aliases (narrow)
+
+    Subnets and hosts are read from config so the address pool is always
+    constrained to IPs reachable from the Linux hosts — required in cloud
+    environments where anti-spoofing drops traffic to/from unrouted addresses.
     """
+    inside_subnets  = cfg["network"]["inside"]["subnets"]
+    outside_subnets = cfg["network"]["outside"]["subnets"]
+
+    inside_host_ips = (
+        [cfg["network"]["inside"]["primary_ip"]]
+        + cfg["network"]["inside"].get("aliases", [])
+    )
+    outside_host_ips = (
+        [cfg["network"]["outside"]["primary_ip"]]
+        + cfg["network"]["outside"].get("aliases", [])
+    )
+
     addresses = []
     seen = set()
 
-    # Broad /24 subnets
-    for subnet in INSIDE_SUBNETS + OUTSIDE_SUBNETS:
+    # Broad subnets from config
+    for subnet in inside_subnets:
         name = f"LAB-NET-{subnet.replace('/', '_').replace('.', '-')}"
         if name not in seen:
-            addresses.append({"name": name, "subnet": subnet, "cidr": subnet})
+            addresses.append({"name": name, "subnet": subnet, "cidr": subnet, "side": "inside"})
+            seen.add(name)
+    for subnet in outside_subnets:
+        name = f"LAB-NET-{subnet.replace('/', '_').replace('.', '-')}"
+        if name not in seen:
+            addresses.append({"name": name, "subnet": subnet, "cidr": subnet, "side": "outside"})
             seen.add(name)
 
-    # /28 subnets carved from /24s (for overlapping range overlap type)
-    for base_subnet in INSIDE_SUBNETS + OUTSIDE_SUBNETS:
-        net = ipaddress.ip_network(base_subnet, strict=False)
+    # /28 subnets carved from configured subnets
+    for subnet in inside_subnets:
+        net = ipaddress.ip_network(subnet, strict=False)
         subnets_28 = list(net.subnets(new_prefix=28))
         for sub in random.sample(subnets_28, min(4, len(subnets_28))):
             cidr = str(sub)
             name = f"LAB-SUB-{cidr.replace('/', '_').replace('.', '-')}"
             if name not in seen:
-                addresses.append({"name": name, "subnet": cidr, "cidr": cidr})
+                addresses.append({"name": name, "subnet": cidr, "cidr": cidr, "side": "inside"})
+                seen.add(name)
+    for subnet in outside_subnets:
+        net = ipaddress.ip_network(subnet, strict=False)
+        subnets_28 = list(net.subnets(new_prefix=28))
+        for sub in random.sample(subnets_28, min(4, len(subnets_28))):
+            cidr = str(sub)
+            name = f"LAB-SUB-{cidr.replace('/', '_').replace('.', '-')}"
+            if name not in seen:
+                addresses.append({"name": name, "subnet": cidr, "cidr": cidr, "side": "outside"})
                 seen.add(name)
 
-    # /32 hosts (for shadow rules and overlapping with /24 or /28)
-    sample_hosts = [
-        "192.168.1.10", "192.168.1.20", "192.168.1.50", "192.168.1.100", "192.168.1.150",
-        "10.10.0.10",   "10.10.0.20",   "10.10.0.50",   "10.10.0.100", "10.10.0.150",
-        "10.10.1.10",   "10.10.1.50",   "10.20.0.5",    "10.20.0.100",
-        "10.30.0.10",   "10.40.0.10",
-    ]
-    for host in sample_hosts:
-        cidr = f"{host}/32"
-        name = f"LAB-HOST-{host.replace('.', '-')}"
+    # /32 hosts from configured aliases — these are the actual IPs reachable on each host
+    for ip in inside_host_ips:
+        cidr = f"{ip}/32"
+        name = f"LAB-HOST-{ip.replace('.', '-')}"
         if name not in seen:
-            addresses.append({"name": name, "subnet": cidr, "cidr": cidr})
+            addresses.append({"name": name, "subnet": cidr, "cidr": cidr, "side": "inside"})
+            seen.add(name)
+    for ip in outside_host_ips:
+        cidr = f"{ip}/32"
+        name = f"LAB-HOST-{ip.replace('.', '-')}"
+        if name not in seen:
+            addresses.append({"name": name, "subnet": cidr, "cidr": cidr, "side": "outside"})
             seen.add(name)
 
     return addresses
@@ -367,17 +385,17 @@ def generate_policies(n: int, address_pool: list[dict], ratios: dict,
         "service_overlap": 0,
     }
 
-    # Separate broad vs narrow address objects
-    broad  = [a for a in address_pool if "/" in a["cidr"] and int(a["cidr"].split("/")[1]) <= 24]
-    narrow = [a for a in address_pool if "/" in a["cidr"] and int(a["cidr"].split("/")[1]) > 24]
+    # Separate broad vs narrow address objects, categorised by side tag set in build_address_pool
+    broad  = [a for a in address_pool if int(a["cidr"].split("/")[1]) <= 24]
+    narrow = [a for a in address_pool if int(a["cidr"].split("/")[1]) > 24]
     hosts  = [a for a in address_pool if a["cidr"].endswith("/32")]
 
-    inside_broad   = [a for a in broad  if a["cidr"].startswith("192.168.1.")]
-    outside_broad  = [a for a in broad  if a["cidr"].startswith("10.")]
-    inside_narrow  = [a for a in narrow if a["cidr"].startswith("192.168.1.")]
-    outside_narrow = [a for a in narrow if a["cidr"].startswith("10.")]
-    inside_hosts   = [a for a in hosts  if a["cidr"].startswith("192.168.1.")]
-    outside_hosts  = [a for a in hosts  if a["cidr"].startswith("10.")]
+    inside_broad   = [a for a in broad  if a["side"] == "inside"]
+    outside_broad  = [a for a in broad  if a["side"] == "outside"]
+    inside_narrow  = [a for a in narrow if a["side"] == "inside"]
+    outside_narrow = [a for a in narrow if a["side"] == "outside"]
+    inside_hosts   = [a for a in hosts  if a["side"] == "inside"]
+    outside_hosts  = [a for a in hosts  if a["side"] == "outside"]
 
     if not inside_broad:   inside_broad   = address_pool[:3]
     if not outside_broad:  outside_broad  = address_pool[3:6]
@@ -517,7 +535,7 @@ def run(config_path: str, n_rules: int, dry_run: bool = False):
 
     # Build address pool
     console.print("\n[cyan]Building address pool...")
-    address_pool = build_address_pool(n_rules)
+    address_pool = build_address_pool(n_rules, cfg)
     console.print(f"  Address objects  : {len(address_pool)}")
 
     # Push address objects
