@@ -137,9 +137,13 @@ def rules(ctx, count, dry_run, delete):
 def traffic(ctx, direction, sessions, setup_aliases, remove_aliases):
     """Phase 2: Generate traffic between LinuxA and LinuxB."""
     import os
+    console.print(
+        "[yellow]NOTE:[/yellow] Traffic generation requires root. "
+        "If this command fails, re-run as:\n"
+        "  [bold]source .venv/bin/activate && sudo $(which python3) main.py traffic ...[/bold]"
+    )
     if os.geteuid() != 0:
-        console.print("[bold red]ERROR: Traffic generation requires root (raw socket access).")
-        console.print("Run with: sudo python3 main.py traffic ...")
+        console.print("[bold red]ERROR: Not running as root — raw socket access denied.[/bold red]")
         sys.exit(1)
 
     from phase2_traffic import run as run_traffic, setup_aliases as do_aliases
