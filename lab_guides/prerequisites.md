@@ -58,7 +58,9 @@ python3 --version    # Must be 3.10 or higher
 pip3 --version
 ```
 
-### hping3
+### hping3 *(optional)*
+
+`hping3` is only needed for the **optional** connectivity sanity-check flows in Lab 2 Task 3. If you are following the standard path (Linux Host A only), you can skip this.
 
 ```bash
 hping3 --version
@@ -126,7 +128,7 @@ Verify the following paths are reachable **before** starting Lab 1. All failures
 |------|----|------|
 | Workstation | FortiGate GUI | `https://192.168.1.4` loads in browser |
 | Linux Host A | FortiGate port2 (inside) | `ping 192.168.1.4` |
-| Linux Host A | FortiGate API | `curl -sk https://192.168.1.4/api/v2/cmdb/system/status -H "Authorization: Bearer <token>"` returns JSON |
+| Linux Host A | FortiGate API | `curl -sk https://192.168.1.4/api/v2/cmdb/system/status -H "Authorization: Bearer <token>"` returns JSON *(verify after Lab 1 Exercise 2 — the API token does not exist yet)* |
 | Linux Host B | FortiGate port1 (outside) *(optional)* | `ping 10.10.0.4` — only if Host B is deployed |
 | Linux Host A | Linux Host B (through FGT) *(optional)* | `ping 10.10.0.100` — only if Host B is deployed |
 | Linux Host B | Linux Host A (through FGT) *(optional)* | `ping 192.168.1.100` — only if Host B is deployed |
@@ -158,11 +160,11 @@ Use this checklist at the start of each session to confirm readiness.
 ```
 [ ] FortiGate is reachable at https://192.168.1.4
 [ ] Linux Host A: Python 3.10+, repo cloned, pip install done
-[ ] Linux Host A: hping3 installed (`hping3 --version`)
+[ ] (Optional) Linux Host A: hping3 installed (`hping3 --version`) — only needed for Lab 2 Task 3 optional connectivity flows
 [ ] Linux Host A: sudo works (`sudo -n true`)
 [ ] Linux Host A can ping FortiGate at 192.168.1.4
 [ ] OpenRouter API key available (configured in OpenCode)
-[ ] config.yaml.example copied to config.yaml (done in Lab 1 Exercise 3)
+[ ] config.yaml.example copied to config.yaml (done in Lab 1 Exercise 2, Task 4)
 [ ] (Optional) Linux Host B is deployed and Linux Host A can ping it through FortiGate — only for the optional Lab 2 Host B flows
 [ ] (Optional) FortiAnalyzer is reachable at https://172.16.0.5 — only if doing the FAZ appendix
 [ ] (Optional) FortiAI Assist license is active on FortiAnalyzer — only if doing the FAZ appendix

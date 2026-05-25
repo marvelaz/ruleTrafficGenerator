@@ -51,6 +51,8 @@ sudo $(which python3) main.py traffic --setup-aliases
 | **Linux Host A** (Inside)  | eth0 | `192.168.1.101` – `192.168.1.110` (/24) | Inside LAN  | Yes |
 | **Linux Host B** (Outside) *(optional)* | eth0 | `10.10.0.101` – `10.10.0.110` (/24)    | Outside WAN | No — informational only; `--setup-aliases` does not configure Host B because the lab does not use it |
 
+> **Rule generation address pool:** Firewall rule address objects (Phase 1) are generated exclusively from the subnets listed under `network.inside.subnets` and `network.outside.subnets` in `config.yaml`. The defaults are `192.168.1.0/24` (inside) and `10.10.0.0/24` (outside), matching the Linux host interfaces exactly. This ensures every rule target is reachable by the traffic generator — required in cloud environments where the hypervisor drops packets to/from addresses not assigned to the instance. For on-prem labs with additional routed subnets, add them to the `subnets` lists in `config.yaml`.
+
 ------
 
 ## Traffic Roles and Design Intent
