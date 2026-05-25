@@ -377,6 +377,17 @@ def run(config_path: str, direction: str = "in2out", max_sessions: int = 0):
         # Fallback: generate random traffic without rule file
         log.warning("No rule file found — generating generic random traffic.")
 
+    # Default to 2 full passes through the target set so every targeted rule
+    # gets at least 2 hits without running indefinitely. Caller can override
+    # with --sessions N (0 = unlimited, run until Ctrl+C).
+    if max_sessions == 0 and selector.targets:
+        max_sessions = len(selector.targets) * 2
+        console.print(
+            f"[dim]Auto-stop after {max_sessions} sessions "
+            f"(2 passes × {len(selector.targets)} targets). "
+            "Use --sessions 0 to run indefinitely.[/dim]"
+        )
+
     icmp_count = traffic_cfg.get("icmp_count", 3)
     delay_pkt  = traffic_cfg.get("inter_packet_delay", 0.5)
     delay_sess = traffic_cfg.get("inter_session_delay", 1.0)
