@@ -169,6 +169,22 @@ def _send_dns_query(src_ip: str, dst_ip: str, iface: str):
         return False
 
 
+def _send_udp_packet(src_ip: str, dst_ip: str, dst_port: int, iface: str):
+    """Send a minimal UDP packet to trigger a FortiGate policy hit."""
+    try:
+        from scapy.all import IP, UDP, Raw, send
+        pkt = (
+            IP(src=src_ip, dst=dst_ip)
+            / UDP(sport=random.randint(1024, 65535), dport=dst_port)
+            / Raw(load=b"\x00" * 8)
+        )
+        send(pkt, iface=iface, verbose=False)
+        return True
+    except Exception as e:
+        log.debug(f"UDP {src_ip}->{dst_ip}:{dst_port} failed: {e}")
+        return False
+
+
 def _send_http_request(src_ip: str, dst_ip: str, port: int, iface: str):
     """
     Send an HTTP GET using raw socket (bypasses Scapy for layer 7).
@@ -200,26 +216,26 @@ def _send_http_request(src_ip: str, dst_ip: str, port: int, iface: str):
 
 # Keys must match the service names used in phase1_rule_gen.py SERVICES list exactly.
 SERVICE_PORT_MAP = {
-    "HTTP":     ("tcp",      80),
-    "HTTPS":    ("tcp",      443),
-    "SSH":      ("tcp",      22),
-    "DNS":      ("dns",      53),    # phase1 uses "DNS" (UDP 53)
-    "SMTP":     ("tcp",      25),
-    "MYSQL":    ("tcp",      3306),
-    "RDP":      ("tcp",      3389),
-    "FTP":      ("tcp",      21),
-    "NTP":      ("udp_skip", 123),   # complex — skip generation
-    "SNMP":     ("udp_skip", 161),   # complex — skip generation
-    "PING":     ("icmp",     0),     # phase1 uses "PING" not "ICMP"
-    "LDAP":     ("tcp",      389),
-    "MS-SQL":   ("tcp",      1433),  # phase1 uses "MS-SQL" not "MSSQL"
-    "IMAP":     ("tcp",      143),
-    "POP3":     ("tcp",      110),
-    "TELNET":   ("tcp",      23),
-    "KERBEROS": ("tcp",      88),
-    "NFS":      ("tcp",      2049),
-    "RADIUS":   ("udp_skip", 1812),  # complex — skip generation
-    "SYSLOG":   ("udp_skip", 514),   # complex — skip generation
+    "HTTP":     ("tcp",  80),
+    "HTTPS":    ("tcp",  443),
+    "SSH":      ("tcp",  22),
+    "DNS":      ("dns",  53),
+    "SMTP":     ("tcp",  25),
+    "MYSQL":    ("tcp",  3306),
+    "RDP":      ("tcp",  3389),
+    "FTP":      ("tcp",  21),
+    "NTP":      ("udp",  123),
+    "SNMP":     ("udp",  161),
+    "PING":     ("icmp", 0),
+    "LDAP":     ("tcp",  389),
+    "MS-SQL":   ("tcp",  1433),
+    "IMAP":     ("tcp",  143),
+    "POP3":     ("tcp",  110),
+    "TELNET":   ("tcp",  23),
+    "KERBEROS": ("tcp",  88),
+    "NFS":      ("tcp",  2049),
+    "RADIUS":   ("udp",  1812),
+    "SYSLOG":   ("udp",  514),
 }
 
 
@@ -291,23 +307,20 @@ def dispatch_session(
         sent = _send_icmp(src_ip, dst_ip, icmp_count, iface)
     elif proto == "dns":
         sent = _send_dns_query(src_ip, dst_ip, iface)
+    elif proto == "udp":
+        sent = _send_udp_packet(src_ip, dst_ip, port, iface)
     elif proto == "tcp":
         # Use TCP SYN for all TCP services — FortiGate increments the hit counter
-        # on the first matching packet; a completed handshake is not required and
-        # would fail with connection refused since there is no server on LinuxB.
+        # on the first matching packet; a completed handshake is not required.
         sent = _send_tcp_syn(src_ip, dst_ip, port, iface)
-    else:
-        # udp_skip (NTP, SNMP, RADIUS, SYSLOG) — not generated, not a failure
-        skipped = True
 
     return {
-        "src":     src_ip,
-        "dst":     dst_ip,
-        "proto":   proto,
-        "port":    port,
-        "policy":  policy.get("name", "unknown"),
-        "sent":    sent,
-        "skipped": skipped,
+        "src":    src_ip,
+        "dst":    dst_ip,
+        "proto":  proto,
+        "port":   port,
+        "policy": policy.get("name", "unknown"),
+        "sent":   sent,
     }
 
 
@@ -319,16 +332,13 @@ class TrafficStats:
     def __init__(self):
         self.sent         = 0
         self.failed       = 0
-        self.skipped      = 0
         self.sessions     = 0
         self.proto_counts: dict[str, int] = {}
         self.start_time   = time.time()
 
     def record(self, session: dict):
         self.sessions += 1
-        if session.get("skipped"):
-            self.skipped += 1
-        elif session["sent"]:
+        if session["sent"]:
             self.sent += 1
             proto = session["proto"]
             self.proto_counts[proto] = self.proto_counts.get(proto, 0) + 1
@@ -343,11 +353,10 @@ class TrafficStats:
         t = Table(title="Traffic Generation — Live Stats", show_lines=True)
         t.add_column("Metric", style="cyan")
         t.add_column("Value", style="green")
-        t.add_row("Sessions",  str(self.sessions))
-        t.add_row("Sent OK",   str(self.sent))
-        t.add_row("Skipped",   str(self.skipped) + " (NTP/SNMP/RADIUS/SYSLOG — no generator)")
-        t.add_row("Failed",    str(self.failed))
-        t.add_row("Elapsed",   self.elapsed())
+        t.add_row("Sessions", str(self.sessions))
+        t.add_row("Sent OK",  str(self.sent))
+        t.add_row("Failed",   str(self.failed))
+        t.add_row("Elapsed",  self.elapsed())
         for proto, cnt in self.proto_counts.items():
             t.add_row(f"  {proto.upper()}", str(cnt))
         return t
@@ -461,12 +470,7 @@ def run(config_path: str, direction: str = "in2out", max_sessions: int = 0):
             time.sleep(delay_sess)
 
     console.print(f"\n[green]Traffic generation stopped.")
-    console.print(
-        f"Total sessions: {stats.sessions} | "
-        f"Sent: {stats.sent} | "
-        f"Skipped: {stats.skipped} | "
-        f"Failed: {stats.failed}"
-    )
+    console.print(f"Total sessions: {stats.sessions} | Sent: {stats.sent} | Failed: {stats.failed}")
 
 
 def setup_aliases(config_path: str, remove: bool = False):
