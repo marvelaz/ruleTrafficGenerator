@@ -285,26 +285,29 @@ def dispatch_session(
     proto_info = SERVICE_PORT_MAP.get(svc_key, ("tcp", 80))
     proto, port = proto_info
 
-    sent = False
+    sent    = False
+    skipped = False
     if proto == "icmp":
         sent = _send_icmp(src_ip, dst_ip, icmp_count, iface)
     elif proto == "dns":
         sent = _send_dns_query(src_ip, dst_ip, iface)
-    elif proto == "tcp" and port in (80, 8080):
-        sent = _send_http_request(src_ip, dst_ip, port, iface)
     elif proto == "tcp":
+        # Use TCP SYN for all TCP services — FortiGate increments the hit counter
+        # on the first matching packet; a completed handshake is not required and
+        # would fail with connection refused since there is no server on LinuxB.
         sent = _send_tcp_syn(src_ip, dst_ip, port, iface)
     else:
-        # udp_skip — not generating (would require complex handling)
-        sent = False
+        # udp_skip (NTP, SNMP, RADIUS, SYSLOG) — not generated, not a failure
+        skipped = True
 
     return {
-        "src": src_ip,
-        "dst": dst_ip,
-        "proto": proto,
-        "port": port,
-        "policy": policy.get("name", "unknown"),
-        "sent": sent,
+        "src":     src_ip,
+        "dst":     dst_ip,
+        "proto":   proto,
+        "port":    port,
+        "policy":  policy.get("name", "unknown"),
+        "sent":    sent,
+        "skipped": skipped,
     }
 
 
@@ -314,15 +317,18 @@ def dispatch_session(
 
 class TrafficStats:
     def __init__(self):
-        self.sent       = 0
-        self.failed     = 0
-        self.sessions   = 0
+        self.sent         = 0
+        self.failed       = 0
+        self.skipped      = 0
+        self.sessions     = 0
         self.proto_counts: dict[str, int] = {}
-        self.start_time = time.time()
+        self.start_time   = time.time()
 
     def record(self, session: dict):
         self.sessions += 1
-        if session["sent"]:
+        if session.get("skipped"):
+            self.skipped += 1
+        elif session["sent"]:
             self.sent += 1
             proto = session["proto"]
             self.proto_counts[proto] = self.proto_counts.get(proto, 0) + 1
@@ -337,10 +343,11 @@ class TrafficStats:
         t = Table(title="Traffic Generation — Live Stats", show_lines=True)
         t.add_column("Metric", style="cyan")
         t.add_column("Value", style="green")
-        t.add_row("Sessions",     str(self.sessions))
-        t.add_row("Sent OK",      str(self.sent))
-        t.add_row("Failed",       str(self.failed))
-        t.add_row("Elapsed",      self.elapsed())
+        t.add_row("Sessions",  str(self.sessions))
+        t.add_row("Sent OK",   str(self.sent))
+        t.add_row("Skipped",   str(self.skipped) + " (NTP/SNMP/RADIUS/SYSLOG — no generator)")
+        t.add_row("Failed",    str(self.failed))
+        t.add_row("Elapsed",   self.elapsed())
         for proto, cnt in self.proto_counts.items():
             t.add_row(f"  {proto.upper()}", str(cnt))
         return t
@@ -454,7 +461,12 @@ def run(config_path: str, direction: str = "in2out", max_sessions: int = 0):
             time.sleep(delay_sess)
 
     console.print(f"\n[green]Traffic generation stopped.")
-    console.print(f"Total sessions: {stats.sessions} | Sent: {stats.sent} | Failed: {stats.failed}")
+    console.print(
+        f"Total sessions: {stats.sessions} | "
+        f"Sent: {stats.sent} | "
+        f"Skipped: {stats.skipped} | "
+        f"Failed: {stats.failed}"
+    )
 
 
 def setup_aliases(config_path: str, remove: bool = False):
