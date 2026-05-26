@@ -78,9 +78,13 @@ class FortiGateAPI:
         """GET /monitor/firewall/policy/ — per-policy hit counts."""
         try:
             resp = self.get("/monitor/firewall/policy/")
-            return resp.get("results", [])
+            results = resp.get("results", [])
+            # FortiOS sometimes returns a dict keyed by policyid instead of a list
+            if isinstance(results, dict):
+                return [{"policyid": k, **v} for k, v in results.items()]
+            return results
         except Exception as e:
-            log.warning(f"Hit-count query failed: {e}")
+            log.error(f"Hit-count query failed: {e}")
             return []
 
     def get_all_lab_policies(self) -> list[dict]:
@@ -245,21 +249,38 @@ def run_behavioral_pass(
 
     # Fetch all policy stats from FortiGate monitor endpoint
     hitcount_data = fgt.get_policy_hitcounts()
+    if not hitcount_data:
+        console.print(
+            "[bold red]  WARNING: FortiGate monitor API returned no policy stats.\n"
+            "  Hit counts will show as 0. Possible causes:\n"
+            "    • Traffic phase (phase2) hasn't been run yet\n"
+            "    • Monitor API endpoint unreachable or token lacks read access\n"
+            "    • FortiGate takes a few minutes to update counters after traffic"
+        )
+    else:
+        console.print(f"  Monitor API returned stats for [bold]{len(hitcount_data)}[/bold] policies")
+
     fgt_hits: dict[str, dict] = {}
     for entry in hitcount_data:
         pid = str(entry.get("policyid") or "")
         if pid:
             fgt_hits[pid] = entry
 
-    # Classify each lab policy
+    # Classify each lab policy; try multiple FortiOS field name variants
     unused: list[dict] = []
     used:   list[dict] = []
 
     for pid, policy in pid_to_policy.items():
-        stats     = fgt_hits.get(pid, {})
-        hit_count = stats.get("hit_count", 0)
-        bytes_    = stats.get("bytes", 0)
-        last_used = stats.get("last_used", 0)
+        stats = fgt_hits.get(pid, {})
+        # FortiOS uses hit_count in some versions, hit-count in others
+        hit_count = (
+            stats.get("hit_count")
+            or stats.get("hit-count")
+            or stats.get("hitcount")
+            or 0
+        )
+        bytes_ = stats.get("bytes") or stats.get("bytes-tx") or 0
+        last_used = stats.get("last_used") or stats.get("last-used") or 0
 
         record = {
             "policyid":  pid,
@@ -274,7 +295,7 @@ def run_behavioral_pass(
             used.append(record)
 
     console.print(f"  Total lab policies : {len(lab_policies)}")
-    console.print(f"  Used               : [green]{len(used)}")
+    console.print(f"  Used (hits > 0)    : [green]{len(used)}")
     console.print(f"  Unused (0 hits)    : [red]{len(unused)}")
 
     return {
@@ -557,22 +578,28 @@ def print_report(
             t.add_section()
         console.print(t)
 
-    # ── Unused policies ───────────────────────────────────────────────────
-    if behavioral is not None and behavioral["unused"]:
+    # ── Hit count table (all lab policies from FortiGate) ────────────────
+    if behavioral is not None:
+        all_policies = behavioral["used"] + behavioral["unused"]
+        all_policies.sort(key=lambda p: int(p["hit_count"]), reverse=True)
         console.print(
-            f"\n[bold yellow]Unused Policies ({len(behavioral['unused'])} policies with zero hits)[/bold yellow]"
+            f"\n[bold yellow]FortiGate Hit Counts — All Lab Policies "
+            f"({len(all_policies)} total, source: monitor/firewall/policy)[/bold yellow]"
         )
         t = Table(show_lines=True)
-        t.add_column("Policy ID", style="white", justify="right")
+        t.add_column("Policy ID", style="white",  justify="right")
         t.add_column("Name",      style="white")
-        t.add_column("Hit count", style="cyan",  justify="right")
-        t.add_column("Bytes",     style="cyan",  justify="right")
-        for p in behavioral["unused"]:
+        t.add_column("Hit count", style="cyan",   justify="right")
+        t.add_column("Bytes",     style="cyan",   justify="right")
+        t.add_column("Status",    style="yellow")
+        for p in all_policies:
+            status = "[green]used" if int(p["hit_count"]) > 0 else "[red]unused"
             t.add_row(
                 str(p["policyid"]),
                 p["name"],
                 str(p["hit_count"]),
                 str(p["bytes"]),
+                status,
             )
         console.print(t)
 
