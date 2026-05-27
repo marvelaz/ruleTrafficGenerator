@@ -74,11 +74,10 @@ sudo apt update && sudo apt install -y hping3
 
 ### Lab repository
 
-The instructor will provide the repository URL at the start of the session. Once you have it:
+The lab tool files are pre-installed on Linux Host A at `/home/labadmin/tools`. Set up the Python virtual environment:
 
 ```bash
-git clone <repo-url-from-instructor> ~/ruleTrafficGenerator
-cd ~/ruleTrafficGenerator
+cd /home/labadmin/tools
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
