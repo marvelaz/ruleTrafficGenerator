@@ -137,7 +137,7 @@ Connects to FortiGate and applies two detection passes. **No FortiAnalyzer requi
 
 Output is a `traditional_report.json` with a `flagged_policies` index containing `policyid`, `srcaddr`, `dstaddr`, and `service` for every flagged rule — making the report self-contained for downstream use with OpenCode.
 
-**Known limitation:** shadow and subnet-overlap detection is position-dependent (broad rule must appear before narrow rule in FortiGate sequence). Since phase1 shuffles policies before pushing, roughly half of these pairs will be missed. This is intentional — it demonstrates the blind spots of the traditional approach and motivates the AI analysis step.
+**Known limitation:** pure structural CIDR analysis cannot distinguish intentional overlaps (planted shadows, planned redundancy) from incidental ones that emerge in dense rule sets. On a 100-rule lab in a small /24-pair address pool, `phase3_traditional` typically reports 7–10× more shadow/subnet-overlap pairs than ground truth — every accidental superset relationship looks identical to a planted shadow. This over-counting motivates the AI analysis step in Lab 4.
 
 ```bash
 python3 phase3_traditional.py                             # both passes
